@@ -155,3 +155,12 @@ adb pair IP:PORT PAIRING_CODE
 - 点击“打开导出目录”，应能打开 `output/`。
 - 可打开实时日志窗口并关闭，验证界面不会卡死。
 - 可检查 `README.md`、`commands.yaml`、`build_exe.bat` 是否存在。
+
+## 更新说明
+
+### 2026-06-01
+
+- 仓库已新增可直接运行的 Windows 程序：`Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe`。
+- 客户可下载该 exe 后直接运行，无需安装 Python 开发环境。
+- 程序已包含 ADB 诊断、单项日志/问题分析、ADB 调试窗口、投屏、截图、录制屏幕和一键诊断包等功能入口。
+- 源码、测试用例、ADB/scrcpy 依赖和打包脚本继续保留，便于后续维护和重新打包。

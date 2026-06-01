@@ -1,6 +1,7 @@
 .venv/
 build/
-dist/
+dist/*
+!dist/Android_ADB_Diagnostic_Tool.exe
 output/
 __pycache__/
 *.py[cod]
