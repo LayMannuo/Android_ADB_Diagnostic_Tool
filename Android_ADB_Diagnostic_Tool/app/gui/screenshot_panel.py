@@ -1,0 +1,37 @@
+from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
+
+from app.core.ui_text import RECORD_BUTTON_TEXT
+from app.gui.styles import style_button
+
+
+class ScreenshotPanel(QGroupBox):
+    def __init__(self):
+        super().__init__("截屏 / 录屏")
+        layout = QVBoxLayout(self)
+        buttons = QHBoxLayout()
+        self.screenshot_button = QPushButton("截屏")
+        self.open_screenshot_button = QPushButton("打开截图目录")
+        self.record_button = QPushButton(RECORD_BUTTON_TEXT)
+        self.mirror_button = QPushButton("ADB 投屏")
+        self.open_record_button = QPushButton("打开录屏目录")
+        style_button(self.screenshot_button, "primary", "抓取当前设备屏幕截图。")
+        style_button(self.open_screenshot_button, "secondary", "打开截图保存目录。")
+        style_button(self.record_button, "primary", "按设置秒数录制设备屏幕。")
+        style_button(self.mirror_button, "success", "启动 scrcpy 实时投屏窗口。")
+        style_button(self.open_record_button, "secondary", "打开录屏保存目录。")
+        self.record_seconds = QSpinBox()
+        self.record_seconds.setRange(1, 180)
+        self.record_seconds.setValue(10)
+        self.record_seconds.setSuffix(" 秒")
+        buttons.addWidget(self.screenshot_button)
+        buttons.addWidget(self.open_screenshot_button)
+        buttons.addWidget(QLabel("录屏时长"))
+        buttons.addWidget(self.record_seconds)
+        buttons.addWidget(self.record_button)
+        buttons.addWidget(self.mirror_button)
+        buttons.addWidget(self.open_record_button)
+        self.preview = QLabel("截图成功后将在这里显示预览")
+        self.preview.setMinimumHeight(140)
+        self.preview.setStyleSheet("border: 1px solid #dfe3ea; color: #5f6368; padding: 8px;")
+        layout.addLayout(buttons)
+        layout.addWidget(self.preview)

@@ -1,0 +1,434 @@
+- category: device_info
+  name: adb_devices
+  command: devices -l
+  output: 01_device_info/adb_devices.txt
+  timeout: 15
+  optional: false
+  description: ADB 设备列表
+- category: device_info
+  name: getprop
+  command: shell getprop
+  output: 01_device_info/getprop.txt
+  timeout: 30
+  optional: false
+  description: 系统属性
+- category: device_info
+  name: uname
+  command: shell uname -a
+  output: 01_device_info/uname.txt
+  timeout: 15
+  optional: true
+  description: 内核信息
+- category: device_info
+  name: proc_version
+  command: shell cat /proc/version
+  output: 01_device_info/proc_version.txt
+  timeout: 15
+  optional: true
+  description: 内核版本
+- category: device_info
+  name: storage
+  command: shell df -h
+  output: 01_device_info/df_h.txt
+  timeout: 20
+  optional: true
+  description: 存储空间
+- category: device_info
+  name: meminfo
+  command: shell cat /proc/meminfo
+  output: 01_device_info/meminfo.txt
+  timeout: 20
+  optional: true
+  description: 内存信息
+- category: device_info
+  name: cpuinfo
+  command: shell cat /proc/cpuinfo
+  output: 01_device_info/cpuinfo.txt
+  timeout: 20
+  optional: true
+  description: CPU 信息
+- category: device_info
+  name: uptime
+  command: shell uptime
+  output: 01_device_info/uptime.txt
+  timeout: 10
+  optional: true
+  description: 运行时间
+- category: device_info
+  name: date
+  command: shell date
+  output: 01_device_info/date.txt
+  timeout: 10
+  optional: true
+  description: 设备时间
+- category: device_info
+  name: settings_system
+  command: shell settings list system
+  output: 01_device_info/settings_system.txt
+  timeout: 25
+  optional: true
+  description: system 设置
+- category: device_info
+  name: settings_global
+  command: shell settings list global
+  output: 01_device_info/settings_global.txt
+  timeout: 25
+  optional: true
+  description: global 设置
+- category: device_info
+  name: settings_secure
+  command: shell settings list secure
+  output: 01_device_info/settings_secure.txt
+  timeout: 25
+  optional: true
+  description: secure 设置
+- category: logcat
+  name: logcat_current
+  command: logcat -d -v time
+  output: 02_logcat/logcat_current.txt
+  timeout: 60
+  optional: false
+  description: 当前 logcat
+- category: logcat
+  name: logcat_main
+  command: logcat -b main -d -v time
+  output: 02_logcat/logcat_main.txt
+  timeout: 60
+  optional: true
+  description: main buffer
+- category: logcat
+  name: logcat_system
+  command: logcat -b system -d -v time
+  output: 02_logcat/logcat_system.txt
+  timeout: 60
+  optional: true
+  description: system buffer
+- category: logcat
+  name: logcat_events
+  command: logcat -b events -d -v time
+  output: 02_logcat/logcat_events.txt
+  timeout: 60
+  optional: true
+  description: events buffer
+- category: logcat
+  name: logcat_radio
+  command: logcat -b radio -d -v time
+  output: 02_logcat/logcat_radio.txt
+  timeout: 60
+  optional: true
+  description: radio buffer
+- category: logcat
+  name: logcat_crash
+  command: logcat -b crash -d -v time
+  output: 02_logcat/logcat_crash.txt
+  timeout: 60
+  optional: true
+  description: crash buffer
+- category: logcat
+  name: dmesg
+  command: shell dmesg
+  output: 02_logcat/dmesg.txt
+  timeout: 30
+  optional: true
+  description: 内核日志
+- category: bugreport
+  name: bugreport
+  command: bugreport bugreport.zip
+  output: 03_bugreport/bugreport_output.txt
+  timeout: 240
+  optional: true
+  description: bugreport
+- category: dumpsys
+  name: dumpsys_all
+  command: shell dumpsys
+  output: 04_dumpsys/dumpsys_all.txt
+  timeout: 120
+  optional: true
+  description: dumpsys 总览
+- category: dumpsys
+  name: dumpsys_activity
+  command: shell dumpsys activity
+  output: 04_dumpsys/activity.txt
+  timeout: 60
+  optional: true
+  description: activity
+- category: dumpsys
+  name: dumpsys_window
+  command: shell dumpsys window
+  output: 04_dumpsys/window.txt
+  timeout: 60
+  optional: true
+  description: window
+- category: dumpsys
+  name: dumpsys_display
+  command: shell dumpsys display
+  output: 04_dumpsys/display.txt
+  timeout: 60
+  optional: true
+  description: display
+- category: dumpsys
+  name: dumpsys_input
+  command: shell dumpsys input
+  output: 04_dumpsys/input.txt
+  timeout: 60
+  optional: true
+  description: input
+- category: dumpsys
+  name: dumpsys_power
+  command: shell dumpsys power
+  output: 04_dumpsys/power.txt
+  timeout: 60
+  optional: true
+  description: power
+- category: dumpsys
+  name: dumpsys_battery
+  command: shell dumpsys battery
+  output: 04_dumpsys/battery.txt
+  timeout: 30
+  optional: true
+  description: battery
+- category: dumpsys
+  name: dumpsys_meminfo
+  command: shell dumpsys meminfo
+  output: 04_dumpsys/meminfo.txt
+  timeout: 90
+  optional: true
+  description: meminfo
+- category: dumpsys
+  name: dumpsys_cpuinfo
+  command: shell dumpsys cpuinfo
+  output: 04_dumpsys/cpuinfo.txt
+  timeout: 60
+  optional: true
+  description: cpuinfo
+- category: dumpsys
+  name: dumpsys_connectivity
+  command: shell dumpsys connectivity
+  output: 04_dumpsys/connectivity.txt
+  timeout: 60
+  optional: true
+  description: connectivity
+- category: dumpsys
+  name: dumpsys_netstats
+  command: shell dumpsys netstats
+  output: 04_dumpsys/netstats.txt
+  timeout: 60
+  optional: true
+  description: netstats
+- category: dumpsys
+  name: dumpsys_wifi
+  command: shell dumpsys wifi
+  output: 04_dumpsys/wifi.txt
+  timeout: 60
+  optional: true
+  description: wifi
+- category: dumpsys
+  name: dumpsys_telephony_registry
+  command: shell dumpsys telephony.registry
+  output: 04_dumpsys/telephony_registry.txt
+  timeout: 60
+  optional: true
+  description: telephony registry
+- category: dumpsys
+  name: dumpsys_phone
+  command: shell dumpsys phone
+  output: 04_dumpsys/phone.txt
+  timeout: 60
+  optional: true
+  description: phone
+- category: dumpsys
+  name: dumpsys_carrier_config
+  command: shell dumpsys carrier_config
+  output: 04_dumpsys/carrier_config.txt
+  timeout: 60
+  optional: true
+  description: carrier config
+- category: dumpsys
+  name: dumpsys_package
+  command: shell dumpsys package
+  output: 04_dumpsys/package.txt
+  timeout: 120
+  optional: true
+  description: package
+- category: crash_anr
+  name: dropbox
+  command: shell dumpsys dropbox
+  output: 05_crash_anr/dropbox.txt
+  timeout: 90
+  optional: true
+  description: dropbox
+- category: crash_anr
+  name: anr_list
+  command: shell ls -l /data/anr
+  output: 05_crash_anr/anr_list.txt
+  timeout: 20
+  optional: true
+  description: ANR 列表
+- category: crash_anr
+  name: tombstones_list
+  command: shell ls -l /data/tombstones
+  output: 05_crash_anr/tombstones_list.txt
+  timeout: 20
+  optional: true
+  description: tombstones 列表
+- category: network
+  name: ip_addr
+  command: shell ip addr
+  output: 06_network/ip_addr.txt
+  timeout: 20
+  optional: true
+  description: IP 地址
+- category: network
+  name: ip_route
+  command: shell ip route
+  output: 06_network/ip_route.txt
+  timeout: 20
+  optional: true
+  description: 路由
+- category: network
+  name: ip_rule
+  command: shell ip rule
+  output: 06_network/ip_rule.txt
+  timeout: 20
+  optional: true
+  description: 路由规则
+- category: network
+  name: proc_net_dev
+  command: shell cat /proc/net/dev
+  output: 06_network/proc_net_dev.txt
+  timeout: 20
+  optional: true
+  description: 网卡统计
+- category: network
+  name: proc_net_route
+  command: shell cat /proc/net/route
+  output: 06_network/proc_net_route.txt
+  timeout: 20
+  optional: true
+  description: 路由表
+- category: network
+  name: dns1
+  command: shell getprop net.dns1
+  output: 06_network/dns1.txt
+  timeout: 10
+  optional: true
+  description: DNS1
+- category: network
+  name: dns2
+  command: shell getprop net.dns2
+  output: 06_network/dns2.txt
+  timeout: 10
+  optional: true
+  description: DNS2
+- category: network
+  name: ping_aliyun
+  command: shell ping -c 4 223.5.5.5
+  output: 06_network/ping_223_5_5_5.txt
+  timeout: 30
+  optional: true
+  description: ping 223.5.5.5
+- category: network
+  name: ping_google_dns
+  command: shell ping -c 4 8.8.8.8
+  output: 06_network/ping_8_8_8_8.txt
+  timeout: 30
+  optional: true
+  description: ping 8.8.8.8
+- category: network
+  name: ping_baidu
+  command: shell ping -c 4 www.baidu.com
+  output: 06_network/ping_baidu.txt
+  timeout: 30
+  optional: true
+  description: ping 域名
+- category: cellular
+  name: mobile_data
+  command: shell settings get global mobile_data
+  output: 07_cellular/mobile_data.txt
+  timeout: 15
+  optional: true
+  description: 移动数据开关
+- category: cellular
+  name: telephony_registry
+  command: shell dumpsys telephony.registry
+  output: 07_cellular/telephony_registry.txt
+  timeout: 60
+  optional: true
+  description: 蜂窝网络状态
+- category: cellular
+  name: phone
+  command: shell dumpsys phone
+  output: 07_cellular/phone.txt
+  timeout: 60
+  optional: true
+  description: phone
+- category: cellular
+  name: carrier_config
+  command: shell dumpsys carrier_config
+  output: 07_cellular/carrier_config.txt
+  timeout: 60
+  optional: true
+  description: 运营商配置
+- category: cellular
+  name: carriers
+  command: shell content query --uri content://telephony/carriers
+  output: 07_cellular/carriers.txt
+  timeout: 60
+  optional: true
+  description: APN 配置
+- category: app_process
+  name: packages
+  command: shell pm list packages
+  output: 08_app_process/packages.txt
+  timeout: 60
+  optional: true
+  description: 安装包列表
+- category: app_process
+  name: ps
+  command: shell ps -A
+  output: 08_app_process/ps.txt
+  timeout: 30
+  optional: true
+  description: 进程列表
+- category: app_process
+  name: top
+  command: shell top -n 1
+  output: 08_app_process/top.txt
+  timeout: 30
+  optional: true
+  description: CPU 进程快照
+- category: proc_system
+  name: mounts
+  command: shell cat /proc/mounts
+  output: 10_proc_system/mounts.txt
+  timeout: 20
+  optional: true
+  description: mount 信息
+- category: proc_system
+  name: filesystems
+  command: shell cat /proc/filesystems
+  output: 10_proc_system/filesystems.txt
+  timeout: 20
+  optional: true
+  description: 文件系统
+- category: proc_system
+  name: interrupts
+  command: shell cat /proc/interrupts
+  output: 10_proc_system/interrupts.txt
+  timeout: 20
+  optional: true
+  description: 中断
+- category: proc_system
+  name: stat
+  command: shell cat /proc/stat
+  output: 10_proc_system/stat.txt
+  timeout: 20
+  optional: true
+  description: proc stat
+- category: proc_system
+  name: proc_uptime
+  command: shell cat /proc/uptime
+  output: 10_proc_system/uptime.txt
+  timeout: 10
+  optional: true
+  description: proc uptime
