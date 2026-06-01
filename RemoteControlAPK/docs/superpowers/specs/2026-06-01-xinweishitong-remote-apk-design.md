@@ -2,7 +2,7 @@
 
 日期：2026-06-01
 产品名：欣威视通遥控器
-目标平台：Android 5.0 到 Android 14
+目标平台：Android 7.0 到 Android 16
 
 ## 背景
 
@@ -55,7 +55,7 @@
 应用名称建议：
 
 - 中文：欣威视通遥控器
-- 英文：XWST Remote Control
+- 英文：SIGNWAY Remote Control
 
 按钮标签策略：
 
@@ -84,7 +84,7 @@
 
 - 完整 Android 工程结构。
 - 应用名称：欣威视通遥控器。
-- 兼容 Android 5.0 到 Android 14。
+- 兼容 Android 7.0 到 Android 16。
 - 遥控器主界面。
 - 首次启动引导。
 - 按键反馈。
@@ -156,7 +156,7 @@
 
 建议模块：
 
-- `MainActivity`：应用入口，承载 Compose UI。
+- `MainActivity`：应用入口，承载传统原生 View UI。
 - `RemoteControlScreen`：遥控器主界面。
 - `IntroScreen` 或 `IntroDialog`：首次启动功能说明。
 - `SettingsScreen`：设置、调试模式、重新查看说明。
@@ -179,15 +179,16 @@
 1. 启动时读取用户语言模式。
 2. 如果模式为“跟随系统”，根据当前系统 Locale 选择中文或英文。
 3. 如果用户手动选择语言，将选择保存到本地设置。
-4. Compose UI 根据当前语言资源重组显示。
+4. UI 根据当前语言资源刷新显示。
 
 ## 兼容性策略
 
-- `minSdk`：21，对应 Android 5.0。
-- `targetSdk`：尽量使用当前稳定 Android SDK，目标兼容 Android 14。
+- `minSdk`：24，对应 Android 7.0。
+- 首版本地构建使用 `compileSdk` / `targetSdk` 34，运行兼容 Android 16；当构建工具升级到完整支持 Android 16/API 36 后，再提升到 36。
+- 为保证 APK 体积更小、启动更快、可靠稳定，首版不采用 Jetpack Compose、AppCompat 或 Material 组件库；使用平台原生 Activity、View 和资源文件实现。
 - 避免 Android 8 以后才有的 API 直接调用；如必须使用，添加版本判断。
-- 使用 `SharedPreferences` 保存简单设置，保证 Android 5 可用。
-- 语言切换不依赖 Android 13 的 App Languages API；首版使用应用内语言状态管理，保证 Android 5 到 Android 14 一致可用。
+- 使用 `SharedPreferences` 保存简单设置，保证 Android 7.0 可用。
+- 语言切换不依赖 Android 13 的 App Languages API；首版使用应用内语言状态管理，保证 Android 7.0 到 Android 16 一致可用。
 - 如果后续接入 Android 13+ 系统级应用语言设置，也必须保留应用内切换入口。
 - UI 尺寸适配手机和常见平板屏幕：
   - 小屏幕可纵向滚动。
@@ -214,7 +215,7 @@ UI 或截图验证：
 
 手动验证：
 
-- Android 5 到 Android 14 设备或模拟器安装启动。
+- Android 7.0 到 Android 16 设备或模拟器安装启动。
 - 点击全部按键有反馈。
 - 设置页能开启键码显示并重新查看说明。
 - 设置页可在“跟随系统 / 简体中文 / English”之间切换，切换后界面立即更新。
@@ -223,14 +224,14 @@ UI 或截图验证：
 
 - 当前缺少真实发送协议。首版必须把发送层抽象出来，避免 UI 和后续硬件协议耦合。
 - 若最终需要红外、串口、网络或 ADB 控制，应补充协议文档后再实现发送层。
-- Android 5 兼容会限制部分现代 API 使用，需要保守配置依赖版本。
+- Android 7.0 兼容会限制部分现代 API 使用，需要保守配置依赖版本。
 - 真实遥控器按键较多，小屏手机上需要平衡美观与可点击尺寸。
 
 ## 验收标准
 
 - APK 名称显示为“欣威视通遥控器”。
-- 英文语言模式下应用内产品名显示为 “XWST Remote Control”。
-- Android 5.0 到 Android 14 可安装运行。
+- 英文语言模式下应用内产品名显示为 “SIGNWAY Remote Control”。
+- Android 7.0 到 Android 16 可安装运行。
 - 首次启动展示功能说明。
 - 首次启动说明支持中文和英文，并默认随系统语言显示。
 - 主界面视觉采用已确认的精致仿真方向。

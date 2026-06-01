@@ -1,0 +1,9 @@
+.gradle/
+.superpowers/
+build/
+app/build/
+local.properties
+*.iml
+dist/
+reference/
+mockups/
