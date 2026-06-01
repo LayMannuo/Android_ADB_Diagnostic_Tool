@@ -2,6 +2,13 @@
 
 这是一个面向普通客户和 FAE 工程师的 Windows 桌面 ADB 诊断工具。客户不需要理解命令行，只需要连接 Android 设备、点击“检测设备”，再点击“一键生成诊断包”，即可得到可发送给工程师分析的 zip 文件。
 
+## 软件界面
+<img width="1623" height="1187" alt="image" src="https://github.com/user-attachments/assets/26047fc6-7b9c-4ba2-b356-45b265d5c3b7" />
+<img width="1623" height="1187" alt="image" src="https://github.com/user-attachments/assets/fc01fd3c-94cd-46d3-b882-296d79caf526" />
+<img width="1623" height="1187" alt="image" src="https://github.com/user-attachments/assets/0b5321e4-c879-421d-b783-32cce7739528" />
+<img width="1623" height="1187" alt="image" src="https://github.com/user-attachments/assets/74888f07-38c9-4c71-b7bc-30d4578340d7" />
+
+
 ## 主要用途
 
 - 检测 ADB、USB 设备、网络 ADB、授权状态和基础设备信息。
