@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('app\\config', 'app\\config'), ('app\\assets', 'app\\assets'), ('tools\\adb', 'tools\\adb'), ('tools\\scrcpy', 'tools\\scrcpy')],
-    hiddenimports=[],
+    hiddenimports=['apkutils2', 'cigam', 'xmltodict', 'elftools'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='version_info.txt',
 )

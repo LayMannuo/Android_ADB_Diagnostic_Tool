@@ -1,34 +1,47 @@
-from PySide6.QtWidgets import QGroupBox, QTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QLabel, QTextEdit, QVBoxLayout
+
+from app.gui.styles import CARD_TITLE_STYLE, style_card
 
 
-class FeatureDescriptionPanel(QGroupBox):
+class FeatureDescriptionPanel(QFrame):
     def __init__(self):
-        super().__init__("功能说明与页面布局")
+        super().__init__()
+        style_card(self)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        title = QLabel("功能说明与页面布局")
+        title.setStyleSheet(CARD_TITLE_STYLE)
+        layout.addWidget(title)
         text = QTextEdit()
         text.setReadOnly(True)
         text.setPlainText(
             "\n".join(
                 [
                     "页面 1：快速诊断",
-                    "  - 设备状态区：显示 ADB、连接、授权、型号、Android 版本、root、remount、IP 摘要。",
-                    "  - 小白解释：root/remount 是工程师权限，普通客户不懂也没关系；失败通常是设备固件限制，不代表工具坏了。",
-                    "  - IP 摘要：用于快速判断设备是否拿到网络地址；没有 IP 时优先抓网络日志或完整诊断包。",
-                    "  - 一键诊断：客户填写问题信息后，自动抓取完整日志并生成 zip。",
-                    "  - ADB 投屏：调用内置 scrcpy 投屏；客户直接运行 exe 即可，不需要单独安装 scrcpy。",
-                    "  - 截屏/录屏：录屏默认 10 秒，可手动修改 1~180 秒，按钮显示为“录制屏幕”。",
-                    "  - ADB 调试窗口：FAE 可直接输入 ADB 命令。默认进入 adb shell 简易模式；需要完整交互时会打开真实 CMD Shell。",
+                    "  适合谁：普通客户和 FAE 都从这里开始。",
+                    "  怎么用：先看顶部当前设备栏；未选择设备时先点“检测数据线设备”或“扫描当前网络”，确认“已可调试”后再执行诊断、投屏、日志或 APK 安装。",
+                    "  页面结构：顶部是当前设备和主操作，中间是设备列表和连接方式，底部是截图、录屏、文件传输和运行日志。",
+                    "  交互说明：检测会先快速列出设备，不会因多台设备逐个读取属性而卡住界面；选中设备的型号、系统版本和 IP 摘要会在后台补全。",
+                    "  一键生成诊断包包含：62 项 ADB 采集命令、自动截图、summary_report.html 报告、command_status.json 执行明细、tool_runtime_log.txt 工具日志，最后压缩为 zip。",
+                    "  采集范围：设备信息 12 项、logcat/dmesg 7 项、bugreport 1 项、dumpsys 16 项、crash/ANR 3 项、网络 10 项、4G/蜂窝 5 项、应用/进程 3 项、proc/system 5 项。",
+                    "  失败策略：单条命令失败、权限不足、不支持或超时都会记录到报告和状态文件，流程继续执行；bugreport 可能耗时较长，卡在该项时优先等待。",
+                    "  重点看：绿色代表成功；红色代表失败，红色区域会告诉原因和解决办法。",
+                    "  设备连接中心：设备列表优先显示；连接方式按数据线、同一网络、无线配对、高级分段展示。端口默认 5566，可按现场配置修改。",
+                    "  工程师项：root、remount、无线调试配对、ADB 调试窗口主要给 FAE 使用；量产设备不支持时属于系统限制。",
                     "",
                     "页面 2：单项日志 / 问题分析",
-                    "  - 抓取当前日志：下拉框选到哪一项，就单独抓取哪一项；支持 Logcat、Crash、dmesg、4G、网络、设备属性、Activity。",
-                    "  - 开始/暂停实时抓取：支持 Logcat、Crash、dmesg、4G/radio、网络轮询、Activity 相关日志；复现后暂停并自动分析。",
-                    "  - 清除选中日志缓存：Logcat、Crash、dmesg、4G/radio 支持清除缓存；快照型日志没有缓存时会明确提示。",
-                    "  - dmesg 日志：抓取内核日志，适合分析驱动、硬件、USB、底层网络问题；权限不足会红色提示原因和处理建议。",
-                    "  - 4G / 蜂窝网络日志：抓取 radio 实时日志和 telephony、phone、carrier_config、mobile_data、getprop 快照，适合分析 SIM、APN、信号、移动数据。",
-                    "  - 客户/FAE 提示：每个日志项显示客户看得懂的适用场景，以及 FAE 需要重点关注的字段和方向。",
-                    "  - 简单分析：自动输出严重度、定位结论、证据、下一步建议，覆盖 crash、ANR、权限不足、超时、DNS/网络等问题。",
+                    "  适合谁：FAE 现场快速定位问题，也适合客户按工程师要求抓指定日志。",
+                    "  怎么用：选择日志类型后，看“当前能力”；已复现点“导出已缓存日志”，现场复现点“开始持续抓取（含缓存）”，复现后点“停止抓取并分析”。",
+                    "  重点看：定位结论、关键字统计、证据和下一步建议。实时预览只显示最近 1000 行，完整日志仍全量保存到文件。",
                     "",
-                    "页面 3：功能说明与页面布局",
+                    "页面 3：APK 安装",
+                    "  适合谁：客户安装测试包，FAE 验证现场 APK 版本和安装结果。",
+                    "  怎么用：拖拽或选择一个或多个 APK，确认包名/版本/MD5；在目标设备表勾选一台或多台“已可调试”设备后点“开始安装”。",
+                    "  目标设备：来自快速诊断页的设备连接中心；检测数据线设备或扫描同一网络后会自动同步，默认勾选已可调试设备。",
+                    "  执行规则：一个 APK 或多个 APK、一个设备或多个设备都走同一个开始安装按钮；任务会按待安装 APK 和目标设备串行执行。",
+                    "  重点看：目标设备表会显示每台设备的安装结果；待安装 APK 表格会显示每个 APK 的状态。标准 APK 会显示标准状态；1.apk(1).1 这类异常文件名会自动规范化。安装成功后会二次确认包名存在，再删除临时 APK。",
+                    "",
+                    "页面 4：功能说明与页面布局",
                     "  - 面向客户：告诉客户先点什么、哪里看结果、哪些失败可以忽略。",
                     "  - 面向 FAE：说明哪些按钮是工程师调试能力，哪些日志适合分析哪类问题。",
                     "",
@@ -40,6 +53,7 @@ class FeatureDescriptionPanel(QGroupBox):
                     "交付说明",
                     "  - 最终交付为单个 exe，内置 ADB，客户不需要安装 Python。",
                     "  - 所有耗时 ADB 操作都在后台执行，不弹黑色 CMD 窗口，不阻塞界面。",
+                    "  - 同一网络扫描会先探测端口，再用 ADB 验证；只有确认可执行调试命令，才显示“已可调试”。",
                     "  - 投屏组件已内置在 exe 包内；如现场失败，优先检查设备授权、驱动、亮屏和 USB/网络连接。",
                 ]
             )
