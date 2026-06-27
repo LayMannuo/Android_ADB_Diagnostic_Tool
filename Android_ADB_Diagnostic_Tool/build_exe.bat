@@ -13,7 +13,7 @@ call .venv\Scripts\python.exe -m pip install --upgrade pip
 call .venv\Scripts\pip.exe install -r requirements.txt
 
 echo [3/4] Building executable...
-call .venv\Scripts\pyinstaller.exe ^
+call .venv\Scripts\python.exe -m PyInstaller ^
   --noconfirm ^
   --windowed ^
   --onefile ^
@@ -22,6 +22,11 @@ call .venv\Scripts\pyinstaller.exe ^
   --add-data "app\assets;app\assets" ^
   --add-data "tools\adb;tools\adb" ^
   --add-data "tools\scrcpy;tools\scrcpy" ^
+  --hidden-import apkutils2 ^
+  --hidden-import cigam ^
+  --hidden-import xmltodict ^
+  --hidden-import elftools ^
+  --version-file version_info.txt ^
   main.py
 
 echo [4/4] Done.

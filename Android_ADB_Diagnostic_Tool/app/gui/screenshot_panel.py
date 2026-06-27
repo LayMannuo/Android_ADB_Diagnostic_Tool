@@ -1,13 +1,18 @@
-from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
 
 from app.core.ui_text import RECORD_BUTTON_TEXT
-from app.gui.styles import style_button
+from app.gui.styles import CARD_TITLE_STYLE, style_button, style_card
 
 
-class ScreenshotPanel(QGroupBox):
+class ScreenshotPanel(QFrame):
     def __init__(self):
-        super().__init__("截屏 / 录屏")
+        super().__init__()
+        style_card(self)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 14)
+        title = QLabel("截屏 / 录屏")
+        title.setStyleSheet(CARD_TITLE_STYLE)
+        layout.addWidget(title)
         buttons = QHBoxLayout()
         self.screenshot_button = QPushButton("截屏")
         self.open_screenshot_button = QPushButton("打开截图目录")
@@ -30,6 +35,7 @@ class ScreenshotPanel(QGroupBox):
         buttons.addWidget(self.record_button)
         buttons.addWidget(self.mirror_button)
         buttons.addWidget(self.open_record_button)
+        buttons.addStretch(1)
         self.preview = QLabel("截图成功后将在这里显示预览")
         self.preview.setMinimumHeight(140)
         self.preview.setStyleSheet("border: 1px solid #dfe3ea; color: #5f6368; padding: 8px;")

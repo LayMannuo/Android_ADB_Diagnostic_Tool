@@ -2,15 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLineEdit, QPushButton, QTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout
 
-from app.gui.styles import style_button
+from app.gui.styles import CARD_TITLE_STYLE, style_button, style_card
 
 
-class FileTransferPanel(QGroupBox):
+class FileTransferPanel(QFrame):
     def __init__(self):
-        super().__init__("ADB 文件传输")
+        super().__init__()
+        style_card(self)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 14)
+        title = QLabel("ADB 文件传输")
+        title.setStyleSheet(CARD_TITLE_STYLE)
+        layout.addWidget(title)
         form = QFormLayout()
         self.local_file = QLineEdit()
         browse_file = QPushButton("选择文件")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 
 try:
@@ -71,17 +72,20 @@ class LogCollector:
         return []
 
     def device_info_summary(self) -> dict[str, str]:
+        connection = "未知"
+        if self.adb.serial:
+            connection = "网络 ADB" if ":" in self.adb.serial else "USB"
         return {
             "serial": self.adb.serial or self.adb.get_property("ro.serialno") or "unknown",
             "model": self.adb.get_property("ro.product.model") or "unknown",
             "brand": self.adb.get_property("ro.product.brand") or "unknown",
             "android": self.adb.get_property("ro.build.version.release") or "unknown",
             "sdk": self.adb.get_property("ro.build.version.sdk") or "unknown",
-            "connection": "网络 ADB" if self.adb.serial and ":" in self.adb.serial else "USB/未知",
+            "connection": connection,
         }
 
     def _run_command(self, item: dict, package_dir: Path, runner: CommandRunner) -> None:
-        command = str(item["command"]).split()
+        command = parse_adb_command(item["command"])
         if item.get("name") == "bugreport":
             command = ["bugreport", str(package_dir / "03_bugreport" / "bugreport.zip")]
         output = package_dir / item["output"]
@@ -93,3 +97,9 @@ class LogCollector:
         (package_dir / "00_customer_info" / "customer_info.json").write_text(
             json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+
+def parse_adb_command(command: object) -> list[str]:
+    if isinstance(command, list):
+        return [str(part) for part in command]
+    return shlex.split(str(command), posix=True)

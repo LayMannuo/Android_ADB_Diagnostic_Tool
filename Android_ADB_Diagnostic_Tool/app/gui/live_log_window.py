@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
 from app.core.adb_manager import AdbManager
-from app.core.utils import ensure_dir, hidden_subprocess_kwargs, safe_text
+from app.core.utils import ensure_dir, hidden_subprocess_kwargs, now_iso, safe_text
 from app.gui.styles import style_button
 
 
@@ -28,6 +28,9 @@ class LiveLogWorker(QThread):
         self.status.emit(f"正在运行：{self.display_command}")
         with self.save_file.open("a", encoding="utf-8", errors="replace") as log:
             try:
+                marker = f"===== 工具开始持续抓取：{now_iso()}；以下输出包含设备已缓存日志，并会继续追加新日志 ====="
+                log.write(marker + "\n")
+                self.line.emit(marker)
                 self.process = subprocess.Popen(
                     self.adb.build_command(self.command),
                     stdout=subprocess.PIPE,
@@ -67,12 +70,12 @@ class LiveLogWindow(QWidget):
         self.setMinimumSize(420, 300)
         layout = QVBoxLayout(self)
         buttons = QHBoxLayout()
-        self.start_button = QPushButton("开始实时日志")
-        self.stop_button = QPushButton("停止实时日志")
+        self.start_button = QPushButton("开始持续抓取（含缓存）")
+        self.stop_button = QPushButton("停止持续抓取")
         self.clear_button = QPushButton("清空显示")
         self.save_button = QPushButton("选择保存目录")
-        style_button(self.start_button, "success", "开始实时抓取 logcat 并保存到文件。")
-        style_button(self.stop_button, "warning", "停止实时日志抓取。")
+        style_button(self.start_button, "success", "先保存设备已缓存 logcat，再持续追加新日志。")
+        style_button(self.stop_button, "warning", "停止持续日志抓取。")
         style_button(self.clear_button, "secondary", "清空窗口显示，不删除保存文件。")
         style_button(self.save_button, "secondary", "选择实时日志保存目录。")
         buttons.addWidget(self.start_button)

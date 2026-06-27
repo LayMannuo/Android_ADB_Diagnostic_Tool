@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .utils import hidden_subprocess_kwargs, resource_base_dir
+from .utils import resource_base_dir
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ def start_screen_mirror(
     if serial:
         command.extend(["-s", serial])
     try:
-        subprocess.Popen(command, cwd=str(scrcpy.parent), **hidden_subprocess_kwargs())
+        subprocess.Popen(command, cwd=str(scrcpy.parent))
         return ScreenMirrorResult(True, "投屏窗口已启动。", "如果没有画面，请确认设备已授权 USB 调试并保持亮屏。")
     except Exception as exc:
         return ScreenMirrorResult(False, f"投屏启动失败：{exc}", "解决：确认 scrcpy 文件完整、设备已连接并授权。")
