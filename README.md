@@ -4,6 +4,13 @@
 
 当前发布版本：`v1.1.0`
 
+## 下载
+
+- [直接下载 Windows EXE v1.1.0](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.0/Android_ADB_Diagnostic_Tool_v1.1.0.exe)
+- [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.1.0)
+
+下载后双击运行，无需安装 Python 开发环境。
+
 ## 软件界面
 
 > 截图使用演示设备和演示 APK，不包含真实客户设备信息。
@@ -203,7 +210,7 @@ adb pair IP:PORT PAIRING_CODE
 
 ### 2026-06-01
 
-- 仓库已新增可直接运行的 Windows 程序：`Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe`。
+- 仓库已新增可直接运行的 Windows 程序：`dist/Android_ADB_Diagnostic_Tool.exe`。
 - 客户可下载该 exe 后直接运行，无需安装 Python 开发环境。
 - 程序已包含设备连接中心、同一网络扫描、ADB 诊断、单项日志/问题分析、ADB 调试窗口、投屏、截图、录制屏幕和一键诊断包等功能入口。
 - 源码、测试用例、ADB/scrcpy 依赖和打包脚本继续保留，便于后续维护和重新打包。

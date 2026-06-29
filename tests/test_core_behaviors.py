@@ -1236,6 +1236,11 @@ class CoreBehaviorTests(unittest.TestCase):
         spec = (root / "Android_ADB_Diagnostic_Tool.spec").read_text(encoding="utf-8")
 
         self.assertIn(r"dist\Android_ADB_Diagnostic_Tool.exe", readme)
+        self.assertIn(
+            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.0/Android_ADB_Diagnostic_Tool_v1.1.0.exe",
+            readme,
+        )
+        self.assertNotIn("Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertNotIn(r"dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn("python.exe -m PyInstaller", build_script)
         self.assertIn("--version-file version_info.txt", build_script)
