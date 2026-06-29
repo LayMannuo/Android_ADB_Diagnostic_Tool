@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import types
@@ -62,6 +63,48 @@ class CoreBehaviorTests(unittest.TestCase):
             command = manager.build_command(["shell", "getprop"])
 
             self.assertEqual(command, [str(adb), "-s", "SERIAL 123", "shell", "getprop"])
+
+    def test_packaged_bundled_adb_runs_from_stable_runtime_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meipass = root / "_MEI123456"
+            local_app_data = root / "LocalAppData"
+            app_dir = root / "app_dir"
+            app_dir.mkdir()
+            adb = meipass / "tools" / "adb" / "adb.exe"
+            adb.parent.mkdir(parents=True)
+            adb.write_text("adb", encoding="utf-8")
+            (adb.parent / "AdbWinApi.dll").write_text("dll", encoding="utf-8")
+
+            old_local_app_data = os.environ.get("LOCALAPPDATA")
+            had_frozen = hasattr(sys, "frozen")
+            old_frozen = getattr(sys, "frozen", None)
+            had_meipass = hasattr(sys, "_MEIPASS")
+            old_meipass = getattr(sys, "_MEIPASS", None)
+            os.environ["LOCALAPPDATA"] = str(local_app_data)
+            sys.frozen = True
+            sys._MEIPASS = str(meipass)
+            try:
+                manager = AdbManager(project_root=app_dir, serial="SERIAL 123")
+            finally:
+                if old_local_app_data is None:
+                    os.environ.pop("LOCALAPPDATA", None)
+                else:
+                    os.environ["LOCALAPPDATA"] = old_local_app_data
+                if had_frozen:
+                    sys.frozen = old_frozen
+                else:
+                    delattr(sys, "frozen")
+                if had_meipass:
+                    sys._MEIPASS = old_meipass
+                else:
+                    delattr(sys, "_MEIPASS")
+
+            self.assertIsNotNone(manager.adb_path)
+            self.assertNotIn("_MEI123456", str(manager.adb_path))
+            self.assertTrue(str(manager.adb_path).startswith(str(local_app_data)))
+            self.assertEqual(manager.adb_path.name, "adb.exe")
+            self.assertTrue((manager.adb_path.parent / "AdbWinApi.dll").exists())
 
     def test_command_runner_records_timeout_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -262,6 +305,48 @@ class CoreBehaviorTests(unittest.TestCase):
 
     def test_screen_mirror_finds_bundled_scrcpy(self):
         self.assertIsNotNone(find_scrcpy(Path.cwd(), include_path=False))
+
+    def test_packaged_bundled_scrcpy_runs_from_stable_runtime_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meipass = root / "_MEI654321"
+            local_app_data = root / "LocalAppData"
+            app_dir = root / "app_dir"
+            app_dir.mkdir()
+            scrcpy = meipass / "tools" / "scrcpy" / "scrcpy.exe"
+            scrcpy.parent.mkdir(parents=True)
+            scrcpy.write_text("scrcpy", encoding="utf-8")
+            (scrcpy.parent / "scrcpy-server").write_text("server", encoding="utf-8")
+
+            old_local_app_data = os.environ.get("LOCALAPPDATA")
+            had_frozen = hasattr(sys, "frozen")
+            old_frozen = getattr(sys, "frozen", None)
+            had_meipass = hasattr(sys, "_MEIPASS")
+            old_meipass = getattr(sys, "_MEIPASS", None)
+            os.environ["LOCALAPPDATA"] = str(local_app_data)
+            sys.frozen = True
+            sys._MEIPASS = str(meipass)
+            try:
+                found = find_scrcpy(app_dir, include_resource=True, include_path=False)
+            finally:
+                if old_local_app_data is None:
+                    os.environ.pop("LOCALAPPDATA", None)
+                else:
+                    os.environ["LOCALAPPDATA"] = old_local_app_data
+                if had_frozen:
+                    sys.frozen = old_frozen
+                else:
+                    delattr(sys, "frozen")
+                if had_meipass:
+                    sys._MEIPASS = old_meipass
+                else:
+                    delattr(sys, "_MEIPASS")
+
+            self.assertIsNotNone(found)
+            self.assertNotIn("_MEI654321", str(found))
+            self.assertTrue(str(found).startswith(str(local_app_data)))
+            self.assertEqual(found.name, "scrcpy.exe")
+            self.assertTrue((found.parent / "scrcpy-server").exists())
 
     def test_apk_filename_normalization_accepts_extra_suffix_after_apk(self):
         self.assertEqual(normalize_apk_filename("客户测试包.apk(1).1"), "客户测试包.apk")
@@ -1237,7 +1322,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertIn(r"dist\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn(
-            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.0/Android_ADB_Diagnostic_Tool_v1.1.0.exe",
+            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.1/Android_ADB_Diagnostic_Tool_v1.1.1.exe",
             readme,
         )
         self.assertNotIn("Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe", readme)
@@ -1252,7 +1337,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         window = main_window_module.MainWindow()
         try:
-            self.assertEqual(APP_VERSION, "1.1.0")
+            self.assertEqual(APP_VERSION, "1.1.1")
             self.assertIn(f"v{APP_VERSION}", APP_WINDOW_TITLE)
             self.assertEqual(window.windowTitle(), APP_WINDOW_TITLE)
             self.assertIn(f"v{APP_VERSION}", window.app_title.text())
@@ -1271,7 +1356,7 @@ class CoreBehaviorTests(unittest.TestCase):
         )
         landing_text = landing.read_text(encoding="utf-8")
         self.assertIn("Android 通用 ADB 诊断助手", landing_text)
-        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.0.exe", landing_text)
+        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.1.exe", landing_text)
         self.assertIn("googlefa92bf9bd382d8db.html", sitemap.read_text(encoding="utf-8"))
 
 

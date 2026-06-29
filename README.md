@@ -2,12 +2,12 @@
 
 这是一个面向普通客户和 FAE 工程师的 Windows 桌面 ADB 诊断工具。客户不需要理解命令行，只需要连接 Android 设备、点击“检测设备”，再点击“一键生成诊断包”，即可得到可发送给工程师分析的 zip 文件。
 
-当前发布版本：`v1.1.0`
+当前发布版本：`v1.1.1`
 
 ## 下载
 
-- [直接下载 Windows EXE v1.1.0](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.0/Android_ADB_Diagnostic_Tool_v1.1.0.exe)
-- [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.1.0)
+- [直接下载 Windows EXE v1.1.1](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.1/Android_ADB_Diagnostic_Tool_v1.1.1.exe)
+- [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.1.1)
 
 下载后双击运行，无需安装 Python 开发环境。
 
@@ -199,6 +199,10 @@ adb pair IP:PORT PAIRING_CODE
 - 可检查 `README.md`、`commands.yaml`、`build_exe.bat` 是否存在。
 
 ## 更新说明
+
+### 2026-06-30 - v1.1.1
+
+- 修复单文件 EXE 退出时提示 `Failed to remove temporary directory _MEI...` 的问题：内置 ADB 和 scrcpy 会先暂存到用户本地目录再启动，避免常驻进程锁定 PyInstaller 临时目录。
 
 ### 2026-06-29 - v1.1.0
 

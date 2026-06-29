@@ -6,7 +6,14 @@ from pathlib import Path
 
 from .command_runner import CommandRunner, CommandResult
 from .runtime_logger import RuntimeLogger
-from .utils import app_base_dir, hidden_subprocess_kwargs, resource_base_dir, safe_text
+from .utils import (
+    app_base_dir,
+    hidden_subprocess_kwargs,
+    is_frozen_resource_path,
+    resource_base_dir,
+    safe_text,
+    stage_runtime_tool_dir,
+)
 
 
 class AdbManager:
@@ -21,6 +28,10 @@ class AdbManager:
         for root in [self.project_root, resource_base_dir()]:
             bundled = root / "tools" / "adb" / "adb.exe"
             if bundled.exists():
+                if is_frozen_resource_path(bundled):
+                    staged = stage_runtime_tool_dir(bundled.parent, "adb") / "adb.exe"
+                    if staged.exists():
+                        return staged
                 return bundled
         system = shutil.which("adb")
         return Path(system) if system else None

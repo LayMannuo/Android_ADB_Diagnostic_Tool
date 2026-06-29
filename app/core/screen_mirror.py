@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .utils import resource_base_dir
+from .utils import is_frozen_resource_path, resource_base_dir, stage_runtime_tool_dir
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,10 @@ def find_scrcpy(project_root: Path, include_resource: bool = True, include_path:
         candidates.append(resource_base_dir() / "tools" / "scrcpy" / "scrcpy.exe")
     for candidate in candidates:
         if candidate.exists():
+            if is_frozen_resource_path(candidate):
+                staged = stage_runtime_tool_dir(candidate.parent, "scrcpy") / "scrcpy.exe"
+                if staged.exists():
+                    return staged
             return candidate
     if not include_path:
         return None
