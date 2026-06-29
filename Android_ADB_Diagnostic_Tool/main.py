@@ -5,6 +5,7 @@ import sys
 from app.core.adb_manager import AdbManager
 from app.core.screen_mirror import find_scrcpy
 from app.core.utils import resource_base_dir
+from app.core.version import APP_NAME, APP_VERSION
 
 
 def smoke_test() -> int:
@@ -31,7 +32,8 @@ def main() -> int:
     from app.gui.main_window import MainWindow
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Android 通用 ADB 诊断助手")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
     window = MainWindow()
     window.show()
     return app.exec()

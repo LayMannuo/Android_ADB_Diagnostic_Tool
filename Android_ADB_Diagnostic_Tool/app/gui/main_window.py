@@ -41,6 +41,7 @@ from app.core.single_log_collector import SingleLogCollector, analyze_log_text
 from app.core.remount_status import evaluate_remount_result
 from app.core.status_messages import status_detail
 from app.core.utils import app_base_dir, ensure_dir, open_in_explorer, quote_command, sanitize_filename, timestamp
+from app.core.version import APP_WINDOW_TITLE
 from app.gui.connection_panel import ConnectionPanel
 from app.gui.adb_debug_window import AdbDebugWindow
 from app.gui.apk_install_panel import ApkInstallPanel
@@ -100,7 +101,7 @@ class MainWindow(QMainWindow):
         self.adb_debug_window: AdbDebugWindow | None = None
         self.single_live_worker: LiveLogWorker | None = None
         self.single_live_file: Path | None = None
-        self.setWindowTitle("Android 通用 ADB 诊断助手")
+        self.setWindowTitle(APP_WINDOW_TITLE)
         self.resize(1080, 760)
         self.setMinimumSize(640, 420)
         self._build_ui()
@@ -208,8 +209,8 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         heading = QVBoxLayout()
-        title = QLabel("Android 通用 ADB 诊断助手")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #111827;")
+        self.app_title = QLabel(APP_WINDOW_TITLE)
+        self.app_title.setStyleSheet("font-size: 22px; font-weight: 800; color: #111827;")
         subtitle = QLabel("先找到设备，再对选中设备执行诊断、投屏、日志或 APK 安装。")
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet(MUTED_TEXT_STYLE)
@@ -218,7 +219,7 @@ class MainWindow(QMainWindow):
         self.current_device_detail = QLabel("请先连接或扫描设备。")
         self.current_device_detail.setWordWrap(True)
         self.current_device_detail.setStyleSheet(MUTED_TEXT_STYLE)
-        heading.addWidget(title)
+        heading.addWidget(self.app_title)
         heading.addWidget(subtitle)
         heading.addSpacing(6)
         heading.addWidget(self.current_device_name)

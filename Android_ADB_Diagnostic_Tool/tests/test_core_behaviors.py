@@ -1242,6 +1242,18 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertIn("version='version_info.txt'", spec)
         self.assertTrue((root / "version_info.txt").exists())
 
+    def test_release_version_is_visible_in_window_and_header(self):
+        from app.core.version import APP_VERSION, APP_WINDOW_TITLE
+
+        window = main_window_module.MainWindow()
+        try:
+            self.assertEqual(APP_VERSION, "1.1.0")
+            self.assertIn(f"v{APP_VERSION}", APP_WINDOW_TITLE)
+            self.assertEqual(window.windowTitle(), APP_WINDOW_TITLE)
+            self.assertIn(f"v{APP_VERSION}", window.app_title.text())
+        finally:
+            window.close()
+
 
 if __name__ == "__main__":
     unittest.main()
