@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://laymannuo.github.io/Android_ADB_Diagnostic_Tool/sitemap.xml

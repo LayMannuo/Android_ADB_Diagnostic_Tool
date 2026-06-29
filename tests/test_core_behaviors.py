@@ -1259,6 +1259,21 @@ class CoreBehaviorTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_google_pages_verification_files_are_present(self):
+        root = Path(__file__).resolve().parents[1]
+        verification = root / "googlefa92bf9bd382d8db.html"
+        landing = root / "index.html"
+        sitemap = root / "sitemap.xml"
+
+        self.assertEqual(
+            verification.read_text(encoding="utf-8").strip(),
+            "google-site-verification: googlefa92bf9bd382d8db.html",
+        )
+        landing_text = landing.read_text(encoding="utf-8")
+        self.assertIn("Android 通用 ADB 诊断助手", landing_text)
+        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.0.exe", landing_text)
+        self.assertIn("googlefa92bf9bd382d8db.html", sitemap.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
