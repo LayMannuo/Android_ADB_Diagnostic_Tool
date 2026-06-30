@@ -84,6 +84,7 @@ def prepare_window(app: QApplication, output_dir: Path) -> MainWindow:
     configure_application_font(app)
     window = MainWindow()
     window.resize(*SCREENSHOT_SIZE)
+    window.start_selected_device_detail_refresh = lambda serial: None
 
     records = demo_devices()
     window._set_connection_devices(records)
@@ -121,6 +122,8 @@ def render(output_dir: Path) -> list[Path]:
     try:
         for index, filename in SCREENSHOTS:
             tabs.setCurrentIndex(index)
+            if index == 0:
+                window.connection_panel.mode_tabs.setCurrentIndex(1)
             app.processEvents()
             path = output_dir / filename
             if not window.grab().save(str(path)):

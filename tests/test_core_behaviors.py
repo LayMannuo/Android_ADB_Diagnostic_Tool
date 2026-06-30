@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -73,6 +74,24 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertFalse(button.icon().isNull())
         self.assertEqual(button.property("appIcon"), "device")
         self.assertGreaterEqual(button.iconSize().width(), 17)
+
+    def test_task_worker_keeps_running_thread_alive_until_finished(self):
+        worker = main_window_module.TaskWorker(lambda: (time.sleep(0.03), "ok")[1])
+        captured = []
+        worker.done.connect(captured.append)
+
+        worker.start()
+        self.assertIn(worker, main_window_module.TaskWorker._live_workers)
+        deadline = time.time() + 2
+        while worker.isRunning() and time.time() < deadline:
+            self._qt_app.processEvents()
+            time.sleep(0.005)
+        worker.wait(1000)
+        self._qt_app.processEvents()
+
+        self.assertFalse(worker.isRunning())
+        self.assertEqual(captured, ["ok"])
+        self.assertNotIn(worker, main_window_module.TaskWorker._live_workers)
 
     def test_adb_manager_builds_serial_command_with_configured_adb(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1281,16 +1300,57 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertEqual(panel.status_button.text(), "检测数据线设备")
         self.assertEqual(panel.usb_refresh_button.text(), "刷新")
-        self.assertEqual(panel.restart_adb_button.text(), "重启 ADB")
+        self.assertEqual(panel.restart_adb_button.text(), "重启 ADB 服务")
+        self.assertEqual(panel.disconnect_button.text(), "断开全部网络设备")
         self.assertEqual(panel.connect_port.text(), DEFAULT_NETWORK_ADB_PORT)
         self.assertEqual(panel.scan_port.text(), DEFAULT_NETWORK_ADB_PORT)
         self.assertIn("设备连接中心", panel.title())
         self.assertEqual(panel.quick_scan_button.text(), "扫描当前网段")
         self.assertEqual(panel.scan_range_button.text(), "扫描指定范围")
-        self.assertEqual(panel.device_table.columnCount(), 6)
+        self.assertEqual(panel.device_table.columnCount(), 7)
         self.assertIn("数据线连接", panel.note.text())
         self.assertIn("网络连接", panel.note.text())
         self.assertIn("网段扫描", panel.note.text())
+
+    def test_connection_panel_exposes_single_network_disconnect_action_in_device_list(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+        captured = []
+        panel.disconnect_device_requested.connect(captured.append)
+        records = [
+            DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="USBBox", brand="", android="14", message="", raw=""),
+            DeviceRecord(serial="192.168.1.72:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.72:5566", model="DS950", brand="", android="14", message="", raw=""),
+            DeviceRecord(serial="192.168.1.70:5566", status="候选设备", connection="网段扫描候选", endpoint="192.168.1.70:5566", model="Candidate", brand="", android="", message="", raw=""),
+        ]
+
+        panel.set_devices(records)
+
+        self.assertIsNone(panel.device_table.cellWidget(0, 6))
+        self.assertIsNone(panel.device_table.cellWidget(1, 6))
+        self.assertIsNone(panel.device_table.cellWidget(2, 6))
+        self.assertEqual(panel.device_table.item(0, 6).text(), "-")
+        self.assertEqual(panel.device_table.item(1, 6).text(), "断开连接")
+        self.assertEqual(panel.device_table.item(2, 6).text(), "-")
+
+        panel._handle_device_cell_clicked(1, 6)
+        self.assertEqual(captured, [])
+        self._qt_app.processEvents()
+
+        self.assertEqual(captured, ["192.168.1.72:5566"])
+
+    def test_connection_panel_uses_stable_action_column_and_readable_network_controls(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+
+        self.assertGreaterEqual(panel.disconnect_button.minimumWidth(), 170)
+        self.assertGreaterEqual(panel.connect_button.minimumWidth(), 120)
+        self.assertGreaterEqual(panel.network_hint.minimumHeight(), 40)
+        self.assertGreaterEqual(panel.ip.minimumWidth(), 320)
+        self.assertGreaterEqual(panel.connect_port.minimumWidth(), 82)
+        self.assertGreaterEqual(panel.device_table.columnWidth(6), 92)
+        self.assertTrue(panel.network_hint.wordWrap())
 
     def test_connection_panel_uses_three_clear_connection_methods(self):
         from app.gui.connection_panel import ConnectionPanel
@@ -1598,6 +1658,91 @@ class CoreBehaviorTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_operation_pages_expose_target_switchers_except_apk_install(self):
+        window = main_window_module.MainWindow()
+        try:
+            calls = []
+            window.start_selected_device_detail_refresh = lambda serial: calls.append(serial)
+            records = [
+                DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="AloT3576-E", brand="rockchip", android="14", message="", raw=""),
+                DeviceRecord(serial="192.168.1.72:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.72:5566", model="DS950", brand="Amlogic", android="14", message="", raw=""),
+            ]
+
+            window._set_connection_devices(records)
+            window.diagnosis_target_combo.setCurrentIndex(1)
+
+            self.assertTrue(hasattr(window, "diagnosis_target_combo"))
+            self.assertTrue(hasattr(window, "single_log_target_combo"))
+            self.assertFalse(hasattr(window, "apk_target_combo"))
+            self.assertEqual(window.connection_panel.selected_serial(), "192.168.1.72:5566")
+            self.assertEqual(window.adb.serial, "192.168.1.72:5566")
+            self.assertIn("DS950", window.current_device_name.text())
+            self.assertEqual(window.single_log_target_combo.currentData(), "192.168.1.72:5566")
+        finally:
+            window.close()
+
+    def test_network_page_disconnect_button_disconnects_all_network_devices(self):
+        captured = {}
+        old_question = main_window_module.QMessageBox.question
+        main_window_module.QMessageBox.question = lambda *args, **kwargs: main_window_module.QMessageBox.Yes
+        window = main_window_module.MainWindow()
+        try:
+            window.start_selected_device_detail_refresh = lambda serial: None
+            window.run_simple_adb = lambda args, title: captured.update({"args": args, "title": title})
+            records = [
+                DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="USBBox", brand="", android="14", message="", raw=""),
+                DeviceRecord(serial="192.168.1.72:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.72:5566", model="DS950", brand="", android="14", message="", raw=""),
+            ]
+            window._set_connection_devices(records)
+            window.connection_panel.ip.setText("192.168.1.72")
+
+            window.disconnect_remote()
+
+            self.assertEqual(captured["args"], ["disconnect"])
+            self.assertIn("全部网络", captured["title"])
+        finally:
+            window.close()
+            main_window_module.QMessageBox.question = old_question
+
+    def test_device_list_disconnect_action_disconnects_single_network_device(self):
+        captured = {}
+        window = main_window_module.MainWindow()
+        try:
+            window.start_selected_device_detail_refresh = lambda serial: None
+            window.run_simple_adb = lambda args, title: captured.update({"args": args, "title": title})
+            records = [
+                DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="USBBox", brand="", android="14", message="", raw=""),
+                DeviceRecord(serial="192.168.1.72:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.72:5566", model="DS950", brand="", android="14", message="", raw=""),
+            ]
+            window._set_connection_devices(records)
+
+            window.connection_panel._handle_device_cell_clicked(1, 6)
+            self._qt_app.processEvents()
+
+            self.assertEqual(captured["args"], ["disconnect", "192.168.1.72:5566"])
+            self.assertIn("单台网络", captured["title"])
+        finally:
+            window.close()
+
+    def test_selecting_debuggable_network_device_auto_refreshes_engineer_details(self):
+        window = main_window_module.MainWindow()
+        try:
+            calls = []
+            window.start_selected_device_detail_refresh = lambda serial: calls.append((serial, getattr(window, "_device_detail_show_result", None)))
+            records = [
+                DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="AloT3576-E", brand="rockchip", android="14", message="", raw=""),
+                DeviceRecord(serial="192.168.1.72:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.72:5566", model="DS950", brand="", android="", message="", raw=""),
+            ]
+            window._set_connection_devices(records)
+            calls.clear()
+
+            window.connection_panel.device_table.selectRow(1)
+
+            self.assertIn(("192.168.1.72:5566", False), calls)
+            self.assertEqual(window.status_labels["ADB 状态"].text(), "可用")
+        finally:
+            window.close()
+
     def test_open_latest_screenshot_uses_default_file_viewer_for_current_image(self):
         captured = {}
         old_open = main_window_module.open_file_default
@@ -1838,22 +1983,24 @@ class CoreBehaviorTests(unittest.TestCase):
             main_window_module.show_info = old_info
             main_window_module.show_warning = old_warning
 
-    def test_packaging_configuration_documents_onefile_exe_and_version_resource(self):
+    def test_packaging_configuration_documents_portable_onedir_exe_and_version_resource(self):
         root = Path(__file__).resolve().parents[1]
         readme = (root / "README.md").read_text(encoding="utf-8")
         build_script = (root / "build_exe.bat").read_text(encoding="utf-8")
         spec = (root / "Android_ADB_Diagnostic_Tool.spec").read_text(encoding="utf-8")
 
-        self.assertIn(r"dist\Android_ADB_Diagnostic_Tool.exe", readme)
+        self.assertIn(r"dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn(
-            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.2.1/Android_ADB_Diagnostic_Tool_v1.2.1.exe",
+            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.2.1/Android_ADB_Diagnostic_Tool_v1.2.1_portable.zip",
             readme,
         )
         self.assertNotIn("Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe", readme)
-        self.assertNotIn(r"dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn("python.exe -m PyInstaller", build_script)
+        self.assertIn("--onedir", build_script)
+        self.assertNotIn("--onefile", build_script)
         self.assertIn("--version-file version_info.txt", build_script)
         self.assertIn("version='version_info.txt'", spec)
+        self.assertIn("COLLECT(", spec)
         self.assertTrue((root / "version_info.txt").exists())
 
     def test_release_version_is_visible_in_window_and_header(self):

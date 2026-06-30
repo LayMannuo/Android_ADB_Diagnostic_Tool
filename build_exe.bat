@@ -16,7 +16,7 @@ echo [3/4] Building executable...
 call .venv\Scripts\python.exe -m PyInstaller ^
   --noconfirm ^
   --windowed ^
-  --onefile ^
+  --onedir ^
   --name Android_ADB_Diagnostic_Tool ^
   --add-data "app\config;app\config" ^
   --add-data "app\assets;app\assets" ^
@@ -30,5 +30,6 @@ call .venv\Scripts\python.exe -m PyInstaller ^
   main.py
 
 echo [4/4] Done.
-echo EXE path: %cd%\dist\Android_ADB_Diagnostic_Tool.exe
+echo EXE path: %cd%\dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe
+echo Tip: keep the whole dist\Android_ADB_Diagnostic_Tool folder together when copying.
 pause
