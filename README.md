@@ -6,18 +6,24 @@
 
 ## 下载
 
-- [直接下载 Windows EXE v1.2.1](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.2.1/Android_ADB_Diagnostic_Tool_v1.2.1.exe)
+- [直接下载 Windows 便携版 v1.2.1](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.2.1/Android_ADB_Diagnostic_Tool_v1.2.1_portable.zip)
 - [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.2.1)
 
-下载后双击运行，无需安装 Python 开发环境。
+下载后双击运行，无需安装 Python 开发环境。若自行编译，推荐使用下方目录版输出，启动更快，也避免单文件包反复解压 `_MEI...` 临时目录导致的假卡死或清理失败提示。
 
 ## 软件界面
 
 > 截图使用演示设备和演示 APK，不包含真实客户设备信息。
 
-![设备连接与快速诊断](docs/images/quick-diagnosis.png)
+![设备连接](docs/images/device-connection.png)
+
+![快速诊断](docs/images/quick-diagnosis.png)
+
+![单项日志 / 问题分析](docs/images/single-log.png)
 
 ![APK 安装到多设备](docs/images/apk-install.png)
+
+![功能说明](docs/images/feature-description.png)
 
 ## 主要用途
 
@@ -31,7 +37,7 @@
 
 1. 打开手机或 Android 设备的“开发者选项”和“USB 调试”。
 2. 用 USB 线连接电脑和设备。
-3. 双击运行 `Android_ADB_Diagnostic_Tool.exe`，或开发环境下运行 `python main.py`。
+3. 双击运行发布包中的 `Android_ADB_Diagnostic_Tool.exe`，或开发环境下运行 `python main.py`。
 4. 在“设备连接”页点击“检测数据线设备”。检测会先快速列出设备，再后台补全选中设备详情；如果提示未授权，请在设备上点击“允许 USB 调试”。
 5. 设备显示“已可调试”后，进入“快速诊断”页点击“一键生成诊断包”，填写客户名称、联系人、问题现象和复现步骤。
 6. 等待完成后，将生成的 `.zip` 文件发送给工程师。
@@ -86,8 +92,10 @@ build_exe.bat
 输出路径：
 
 ```text
-dist\Android_ADB_Diagnostic_Tool.exe
+dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe
 ```
+
+复制给客户时请保留整个 `dist\Android_ADB_Diagnostic_Tool\` 目录，不要只复制单个 exe。目录版无需每次启动时解压 190MB 左右的临时文件，打开速度更稳定。
 
 ## 放入 adb.exe
 
@@ -201,6 +209,7 @@ adb pair IP:PORT PAIRING_CODE
 - 优化快速诊断、单项日志、APK 安装和功能说明页的布局与图标风格，降低文字重叠和粗体锯齿问题。
 - APK 安装页支持选择一个或多个 APK，并勾选多台已可调试设备后统一点击“开始安装”。
 - ADB 调试窗口绑定打开时选中的设备，避免切换设备后误操作；截图、文件传输、录屏和长耗时操作增加更明确的状态反馈。
+- 本地打包默认改为目录版 `dist\Android_ADB_Diagnostic_Tool\Android_ADB_Diagnostic_Tool.exe`，避免单文件 EXE 首次/每次启动解压大体积临时目录造成的假卡死。
 
 ### 2026-06-30 - v1.1.2
 

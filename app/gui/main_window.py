@@ -6,6 +6,7 @@ from PySide6.QtCore import QSize, Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -67,15 +68,28 @@ from app.gui.styles import (
 
 
 class TaskWorker(QThread):
+    _live_workers: set["TaskWorker"] = set()
+    _sequence = 0
+
     progress = Signal(int, int, str)
     done = Signal(object)
     failed = Signal(str)
 
     def __init__(self, func, *args, **kwargs):
         super().__init__()
+        type(self)._sequence += 1
+        self.setObjectName(f"TaskWorker-{type(self)._sequence}:{getattr(func, '__name__', 'work')}")
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self.finished.connect(self._release_self_reference)
+
+    def start(self, priority=QThread.InheritPriority):
+        type(self)._live_workers.add(self)
+        super().start(priority)
+
+    def _release_self_reference(self):
+        type(self)._live_workers.discard(self)
 
     def run(self):
         try:
@@ -104,6 +118,8 @@ class MainWindow(QMainWindow):
         self.adb_debug_windows: dict[str, AdbDebugWindow] = {}
         self.single_live_worker: LiveLogWorker | None = None
         self.single_live_file: Path | None = None
+        self._auto_detail_refreshed_serials: set[str] = set()
+        self._device_detail_show_result = True
         self.setWindowTitle(APP_WINDOW_TITLE)
         self.setWindowIcon(app_icon("adb", "#2563eb"))
         self.resize(1080, 760)
@@ -207,6 +223,9 @@ class MainWindow(QMainWindow):
         page.setStyleSheet(APP_PAGE_STYLE)
         layout = QVBoxLayout(page)
         layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(12)
+        self.single_log_target_combo = QComboBox()
+        layout.addWidget(self._build_target_switcher("单项日志目标设备", self.single_log_target_combo))
         self.single_log_panel = SingleLogPanel()
         layout.addWidget(self.single_log_panel)
         return page
@@ -230,6 +249,23 @@ class MainWindow(QMainWindow):
         layout.addWidget(FeatureDescriptionPanel(), 0, Qt.AlignTop)
         return page
 
+    def _build_target_switcher(self, title: str, combo: QComboBox) -> QFrame:
+        box = QFrame()
+        style_card(box)
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(14, 10, 14, 10)
+        label = QLabel(title)
+        label.setStyleSheet("font-size: 14px; font-weight: 500; color: #111827;")
+        hint = QLabel("切换后，本页操作会绑定到该设备。")
+        hint.setStyleSheet(MUTED_TEXT_STYLE)
+        combo.setMinimumWidth(320)
+        combo.setToolTip("选择本页要操作的设备；只有“已可调试”设备可以执行操作。")
+        layout.addWidget(label)
+        layout.addWidget(combo)
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        return box
+
     def _device_status_box(self) -> QFrame:
         box = QFrame()
         style_card(box)
@@ -250,6 +286,17 @@ class MainWindow(QMainWindow):
         self.current_device_detail.setStyleSheet(MUTED_TEXT_STYLE)
         heading.addWidget(self.current_device_name)
         heading.addWidget(self.current_device_detail)
+        target_row = QHBoxLayout()
+        target_row.setContentsMargins(0, 4, 0, 0)
+        target_label = QLabel("切换操作设备")
+        target_label.setStyleSheet("color: #475569;")
+        self.diagnosis_target_combo = QComboBox()
+        self.diagnosis_target_combo.setMinimumWidth(320)
+        self.diagnosis_target_combo.setToolTip("选择快速诊断页要操作的设备；只有“已可调试”设备可以执行操作。")
+        target_row.addWidget(target_label)
+        target_row.addWidget(self.diagnosis_target_combo)
+        target_row.addStretch(1)
+        heading.addLayout(target_row)
         self.current_device_state = QLabel("待连接")
         self.current_device_state.setStyleSheet(STATUS_PILL_STYLE)
         self.current_device_state.setMinimumHeight(30)
@@ -327,8 +374,9 @@ class MainWindow(QMainWindow):
             self.status_labels[field] = label
             details.addWidget(label, row, col + 1)
         hint = QLabel(
-            "说明：root/remount 是工程师权限状态，普通客户看不懂也没关系；显示不支持通常是量产系统限制。"
-            "IP 摘要用于判断设备是否拿到网络地址，没有 IP 时网络功能可能异常。"
+            "说明：检测设备或切换到“已可调试”设备时会自动读取工程师详情。"
+            "Android/SDK/型号/品牌来自 getprop，授权来自 adb get-state，root 来自 shell id，IP 摘要来自 shell ip addr。"
+            "remount 只有工程师主动执行 adb remount 后才会更新；量产设备不支持通常是系统限制。"
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(PANEL_HINT_STYLE)
@@ -369,6 +417,7 @@ class MainWindow(QMainWindow):
         self.connection_panel.save_range_button.clicked.connect(self.save_scan_range)
         self.connection_panel.saved_ranges.currentIndexChanged.connect(self.connection_panel.apply_selected_range)
         self.connection_panel.device_table.itemSelectionChanged.connect(self.on_connection_device_selected)
+        self.connection_panel.disconnect_device_requested.connect(self.disconnect_single_network_device)
         self.connection_panel.connect_button.clicked.connect(self.connect_remote)
         self.connection_panel.disconnect_button.clicked.connect(self.disconnect_remote)
         self.connection_panel.pair_button.clicked.connect(self.pair_remote)
@@ -389,6 +438,8 @@ class MainWindow(QMainWindow):
         self.single_log_panel.stop_live_button.clicked.connect(self.stop_single_live_log)
         self.single_log_panel.clear_device_log_button.clicked.connect(self.clear_device_logcat)
         self.single_log_panel.open_button.clicked.connect(lambda: open_in_explorer(self.current_single_log_dir))
+        self.diagnosis_target_combo.currentIndexChanged.connect(self.on_target_device_combo_changed)
+        self.single_log_target_combo.currentIndexChanged.connect(self.on_target_device_combo_changed)
         self.apk_install_panel.file_selected.connect(self.prepare_apk_install)
         self.apk_install_panel.files_selected.connect(self.prepare_apk_install_batch)
         self.apk_install_panel.install_button.clicked.connect(self.install_apk)
@@ -416,10 +467,49 @@ class MainWindow(QMainWindow):
     def _set_connection_devices(self, records: list[DeviceRecord]) -> None:
         self.connection_panel.set_devices(records)
         self.apk_install_panel.set_target_devices(records)
+        self._sync_target_device_combos()
         self._sync_target_action_enabled()
 
     def _sync_apk_targets_from_connection_center(self) -> None:
         self.apk_install_panel.set_target_devices(self.connection_panel.records)
+
+    def _target_device_combos(self) -> list[QComboBox]:
+        combos: list[QComboBox] = []
+        for name in ("diagnosis_target_combo", "single_log_target_combo"):
+            combo = getattr(self, name, None)
+            if combo is not None:
+                combos.append(combo)
+        return combos
+
+    def _sync_target_device_combos(self) -> None:
+        combos = self._target_device_combos()
+        if not combos:
+            return
+        records = self.connection_panel.records
+        current_serial = self.connection_panel.selected_serial() or self.adb.serial
+        for combo in combos:
+            combo.blockSignals(True)
+            combo.clear()
+            if not records:
+                combo.addItem("未选择设备", "")
+                combo.setEnabled(False)
+                combo.blockSignals(False)
+                continue
+            combo.setEnabled(True)
+            for record in records:
+                name = record.model or record.display_name() or "未知设备"
+                combo.addItem(f"{name} / {record.serial} / {record.status}", record.serial)
+            index = combo.findData(current_serial) if current_serial else -1
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            combo.blockSignals(False)
+
+    def on_target_device_combo_changed(self) -> None:
+        combo = self.sender()
+        if not isinstance(combo, QComboBox):
+            return
+        serial = combo.currentData()
+        if isinstance(serial, str) and serial:
+            self._select_connection_row(serial)
 
     def _current_connection_record(self) -> DeviceRecord | None:
         serial = self.connection_panel.selected_serial() or self.adb.serial
@@ -556,6 +646,7 @@ class MainWindow(QMainWindow):
 
         self.run_status.setStyleSheet("color: #b06000;")
         self.run_status.setText("已找到可调试设备，正在读取选中设备详情...")
+        self._device_detail_show_result = True
         self.start_selected_device_detail_refresh(self.adb.serial)
 
     def _preferred_device(self, devices: list[dict[str, str]]) -> dict[str, str]:
@@ -615,6 +706,7 @@ class MainWindow(QMainWindow):
         record = next((item for item in self.connection_panel.records if item.serial == serial), None)
         if not record:
             return
+        self._set_status("ADB 状态", "可用" if record.status == "已可调试" else "待验证", "green" if record.status == "已可调试" else "yellow")
         self._set_status("设备序列号", record.serial, "green" if record.status == "已可调试" else "yellow")
         self._set_status("连接状态", record.status, "green" if record.status == "已可调试" else "yellow")
         self._set_status("连接方式", record.connection, "green")
@@ -625,18 +717,40 @@ class MainWindow(QMainWindow):
         if record.android:
             self._set_status("Android 版本", record.android, "green")
         self.update_current_device_summary(record)
+        self._sync_target_device_combos()
         self._sync_target_action_enabled()
+        if self._needs_device_detail_refresh(record):
+            self._auto_detail_refreshed_serials.add(record.serial)
+            self._device_detail_show_result = False
+            self.run_status.setStyleSheet("color: #b06000;")
+            self.run_status.setText(f"正在自动读取 {record.display_name()} 的工程师详情...")
+            self.start_selected_device_detail_refresh(record.serial)
+
+    def _needs_device_detail_refresh(self, record: DeviceRecord) -> bool:
+        if record.status != "已可调试":
+            return False
+        if record.serial in self._auto_detail_refreshed_serials:
+            return False
+        if not (record.model and record.brand and record.android):
+            return True
+        detail_keys = ("SDK 版本", "授权状态", "root 状态（工程师）", "IP 摘要（网络）")
+        for key in detail_keys:
+            label = self.status_labels.get(key)
+            if label and label.text() in {"未检测", "未知"}:
+                return True
+        return False
 
     def start_selected_device_detail_refresh(self, serial: str | None):
         if not serial:
             return
+        show_result = self._device_detail_show_result
 
         def work():
             adb = AdbManager(self.root, serial=serial)
             return self._read_device_properties(adb, serial)
 
         self.device_detail_worker = TaskWorker(work)
-        self.device_detail_worker.done.connect(self.on_device_detail_done)
+        self.device_detail_worker.done.connect(lambda props, show_result=show_result: self.on_device_detail_done(props, show_result))
         self.device_detail_worker.failed.connect(lambda msg: self.set_result_status("读取设备详情失败", "FAILED", msg))
         self.device_detail_worker.start()
 
@@ -656,9 +770,14 @@ class MainWindow(QMainWindow):
             "IP 摘要（网络）": self._ip_summary(ip_raw),
         }
 
-    def on_device_detail_done(self, props: dict[str, str]):
+    def on_device_detail_done(self, props: dict[str, str], show_result: bool = True):
         self._apply_device_properties(props)
-        self.set_result_status("检测完成", "SUCCESS", path=None)
+        self._device_detail_show_result = True
+        if show_result:
+            self.set_result_status("检测完成", "SUCCESS", path=None)
+        else:
+            self.run_status.setStyleSheet("color: #137333;")
+            self.run_status.setText("设备详情已自动更新。后续投屏、日志、截图、文件传输和 ADB 调试窗口会使用当前操作设备。")
 
     def _apply_device_properties(self, props: dict[str, str]):
         serial = props.get("设备序列号", self.adb.serial or "")
@@ -901,25 +1020,24 @@ class MainWindow(QMainWindow):
         self.run_simple_adb(["connect", f"{ip}:{port}"], "连接网络 ADB 设备")
 
     def disconnect_remote(self):
-        ip, port = self.connection_panel.endpoint()
-        if ip:
-            ok, message = ConnectionPanel.validate_endpoint(ip, port)
-            if not ok:
-                self.set_result_status("输入错误", "FAILED", message)
-                return
-            args = ["disconnect", f"{ip}:{port}"]
-        else:
-            selected = self.connection_panel.selected_serial()
-            if selected and ":" in selected:
-                args = ["disconnect", selected]
-            elif selected:
-                self.set_result_status("无法断开数据线设备", "FAILED", "数据线设备不能通过 adb disconnect 断开；请拔掉数据线、关闭 USB 调试或在设备上撤销授权。")
-                return
-            else:
-                if QMessageBox.question(self, "确认断开", "未填写 IP 且未选择网络 ADB 设备，是否断开全部网络 ADB 连接？") != QMessageBox.Yes:
-                    return
-                args = ["disconnect"]
-        self.run_simple_adb(args, "断开网络 ADB 设备")
+        network_count = sum(1 for record in self.connection_panel.records if self._is_network_device(record))
+        message = "将断开全部网络 ADB 连接。单台网络设备请在设备列表行内点击“断开”。"
+        if network_count:
+            message = f"将断开 {network_count} 台已记录的网络 ADB 设备，以及 adb server 中可能存在的其他网络连接。是否继续？"
+        if QMessageBox.question(self, "确认断开全部网络设备", message) != QMessageBox.Yes:
+            return
+        self.run_simple_adb(["disconnect"], "断开全部网络 ADB 设备")
+
+    def disconnect_single_network_device(self, serial: str):
+        record = next((item for item in self.connection_panel.records if item.serial == serial), None)
+        if not record or not self._is_network_device(record):
+            self.set_result_status("无法断开数据线设备", "FAILED", "数据线设备不能通过 adb disconnect 断开；请拔掉数据线、关闭 USB 调试或在设备上撤销授权。")
+            return
+        self.run_simple_adb(["disconnect", serial], "断开单台网络 ADB 设备")
+
+    @staticmethod
+    def _is_network_device(record: DeviceRecord) -> bool:
+        return record.connection == "网络 ADB 连接"
 
     def pair_remote(self):
         ip, port, code = self.connection_panel.pair_endpoint()
@@ -1505,6 +1623,9 @@ class MainWindow(QMainWindow):
             buttons.append(self.adb_debug_button)
         for button in buttons:
             button.setEnabled(not busy)
+        for combo in self._target_device_combos():
+            combo.setEnabled(not busy and combo.count() > 0 and bool(combo.currentData()))
+        self.connection_panel.device_table.setEnabled(not busy)
         if not busy:
             self.screenshot_panel.set_screenshot_path(self.screenshot_panel.current_screenshot_path)
         self.apk_install_panel.install_button.setEnabled(not busy and self.apk_install_panel.current_apk is not None)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -34,6 +34,8 @@ from app.gui.styles import (
 
 
 class ConnectionPanel(QFrame):
+    disconnect_device_requested = Signal(str)
+
     def __init__(self):
         super().__init__()
         self._title = "设备连接中心"
@@ -109,7 +111,7 @@ class ConnectionPanel(QFrame):
         actions = QHBoxLayout()
         self.status_button = QPushButton("检测数据线设备")
         self.usb_refresh_button = QPushButton("刷新")
-        self.restart_adb_button = QPushButton("重启 ADB")
+        self.restart_adb_button = QPushButton("重启 ADB 服务")
         style_button(self.status_button, "primary", "检测 USB 连接、本机 ADB 和设备授权状态。", "device")
         style_button(self.usb_refresh_button, "secondary", "重新刷新当前设备列表。", "refresh")
         style_button(self.restart_adb_button, "warning", "重启本机 ADB 服务，适合设备 offline 或连接异常时使用。", "restart")
@@ -127,22 +129,29 @@ class ConnectionPanel(QFrame):
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignTop)
 
-        self.network_hint = QLabel("适合已知设备 IP 的场景。输入 IP 和端口后直接连接；Android 11+ 可先完成无线配对。")
+        self.network_hint = QLabel("已知设备 IP 时使用：输入 IP 和端口后点击“连接设备”。Android 11+ 可先完成无线配对，再连接设备地址。")
         self.network_hint.setWordWrap(True)
         self.network_hint.setStyleSheet(RESULT_IDLE_STYLE)
         self.network_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.network_hint.setMinimumHeight(40)
+        self.network_hint.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         layout.addWidget(self.network_hint)
 
         manual = QHBoxLayout()
+        manual.setSpacing(10)
         self.ip = QLineEdit()
         self.ip.setPlaceholderText("指定设备 IP，例如 192.168.28.20")
+        self.ip.setMinimumWidth(320)
         self.connect_port = QLineEdit(DEFAULT_NETWORK_ADB_PORT)
+        self.connect_port.setMinimumWidth(82)
         self.connect_port.setMaximumWidth(90)
         self.connect_port.setToolTip("连接指定 IP 时使用的 ADB 网络端口，默认 5566。")
         self.connect_button = QPushButton("连接设备")
-        self.disconnect_button = QPushButton("断开网络设备")
+        self.disconnect_button = QPushButton("断开全部网络设备")
         style_button(self.connect_button, "success", "连接指定 IP 和端口的网络 ADB 设备。", "connect")
-        style_button(self.disconnect_button, "warning", "断开指定 IP 或当前选中的网络 ADB 设备。数据线设备请拔线或关闭 USB 调试。", "disconnect")
+        style_button(self.disconnect_button, "warning", "断开所有通过 adb connect 建立的网络 ADB 设备；单台网络设备请在设备列表行内点击断开。", "disconnect")
+        self.connect_button.setMinimumWidth(120)
+        self.disconnect_button.setMinimumWidth(170)
         manual.addWidget(QLabel("指定 IP"))
         manual.addWidget(self.ip, 1)
         manual.addWidget(QLabel("连接端口"))
@@ -258,9 +267,9 @@ class ConnectionPanel(QFrame):
         self.status_legend.setWordWrap(True)
         self.status_legend.setStyleSheet(PANEL_HINT_STYLE)
         layout.addWidget(self.status_legend)
-        self.device_table = QTableWidget(0, 6)
+        self.device_table = QTableWidget(0, 7)
         self.device_table.setMinimumHeight(190)
-        self.device_table.setHorizontalHeaderLabels(["设备", "状态", "连接方式", "序列号/IP", "系统", "下一步"])
+        self.device_table.setHorizontalHeaderLabels(["设备", "状态", "连接方式", "序列号/IP", "系统", "下一步", "操作"])
         self.device_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.device_table.setSelectionMode(QTableWidget.SingleSelection)
         self.device_table.verticalHeader().setVisible(False)
@@ -277,8 +286,11 @@ class ConnectionPanel(QFrame):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.Fixed)
+        self.device_table.setColumnWidth(6, 96)
         layout.addWidget(self.device_table)
         self.device_table.itemSelectionChanged.connect(self._sync_device_summary)
+        self.device_table.cellClicked.connect(self._handle_device_cell_clicked)
         return box
 
     def _build_engineer_box(self) -> QWidget:
@@ -330,11 +342,13 @@ class ConnectionPanel(QFrame):
         self.scan_status.setText(message)
 
     def set_devices(self, records: list[DeviceRecord]) -> None:
+        current = self.selected_serial()
         self.records = records
         self.empty_device_hint.setVisible(not records)
         ready_count = sum(1 for record in records if record.status == "已可调试")
         self.device_summary_labels["found"].setText(f"已发现 {len(records)} 台")
         self.device_summary_labels["ready"].setText(f"已可调试 {ready_count} 台")
+        self.device_table.setRowCount(0)
         self.device_table.setRowCount(len(records))
         for row, record in enumerate(records):
             cells = [
@@ -353,9 +367,36 @@ class ConnectionPanel(QFrame):
                 if column == 1:
                     item.setForeground(self._status_brush(record.status))
                 self.device_table.setItem(row, column, item)
-        if records and not self.device_table.selectionModel().selectedRows():
-            self.device_table.selectRow(0)
+            self._set_row_action(row, record)
+            self.device_table.setRowHeight(row, 34)
+        selected_row = next((row for row, record in enumerate(records) if record.serial == current), -1)
+        if records:
+            self.device_table.selectRow(selected_row if selected_row >= 0 else 0)
         self._sync_device_summary()
+
+    def _set_row_action(self, row: int, record: DeviceRecord) -> None:
+        item = QTableWidgetItem("断开连接" if self._is_network_record(record) else "-")
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        item.setTextAlignment(Qt.AlignCenter)
+        if self._is_network_record(record):
+            item.setData(Qt.UserRole, record.serial)
+            item.setForeground(self._action_brush())
+            item.setToolTip("断开这台网络 ADB 设备。")
+        else:
+            item.setForeground(self._muted_brush())
+        self.device_table.setItem(row, 6, item)
+
+    def _handle_device_cell_clicked(self, row: int, column: int) -> None:
+        if column != 6 or row < 0 or row >= len(self.records):
+            return
+        record = self.records[row]
+        if self._is_network_record(record):
+            serial = record.serial
+            QTimer.singleShot(0, lambda: self.disconnect_device_requested.emit(serial))
+
+    @staticmethod
+    def _is_network_record(record: DeviceRecord) -> bool:
+        return record.connection == "网络 ADB 连接"
 
     def _sync_device_summary(self) -> None:
         serial = self.selected_serial()
@@ -409,6 +450,18 @@ class ConnectionPanel(QFrame):
             "连接失败": "#b3261e",
         }
         return QBrush(QColor(colors.get(status, "#5f6368")))
+
+    @staticmethod
+    def _action_brush():
+        from PySide6.QtGui import QColor, QBrush
+
+        return QBrush(QColor("#a16207"))
+
+    @staticmethod
+    def _muted_brush():
+        from PySide6.QtGui import QColor, QBrush
+
+        return QBrush(QColor("#64748b"))
 
     @staticmethod
     def validate_endpoint(ip: str, port: str) -> tuple[bool, str]:
