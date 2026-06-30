@@ -2,12 +2,12 @@
 
 这是一个面向普通客户和 FAE 工程师的 Windows 桌面 ADB 诊断工具。客户不需要理解命令行，只需要连接 Android 设备、点击“检测设备”，再点击“一键生成诊断包”，即可得到可发送给工程师分析的 zip 文件。
 
-当前发布版本：`v1.1.1`
+当前发布版本：`v1.1.2`
 
 ## 下载
 
-- [直接下载 Windows EXE v1.1.1](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.1/Android_ADB_Diagnostic_Tool_v1.1.1.exe)
-- [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.1.1)
+- [直接下载 Windows EXE v1.1.2](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.2/Android_ADB_Diagnostic_Tool_v1.1.2.exe)
+- [查看发布页与 SHA256 校验文件](https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/tag/v1.1.2)
 
 下载后双击运行，无需安装 Python 开发环境。
 
@@ -199,6 +199,12 @@ adb pair IP:PORT PAIRING_CODE
 - 可检查 `README.md`、`commands.yaml`、`build_exe.bat` 是否存在。
 
 ## 更新说明
+
+### 2026-06-30 - v1.1.2
+
+- 修复截图返回损坏 PNG 时仍提示成功的问题；截图预览改为居中等比显示。
+- 修复 ADB 文件推送到目录路径时可能丢失 `.exe` 等本地后缀的问题。
+- 优化重启 ADB、停止抓取并分析日志、截屏/录屏、文件传输等长耗时操作的后台执行和进度反馈，降低界面无响应风险。
 
 ### 2026-06-30 - v1.1.1
 

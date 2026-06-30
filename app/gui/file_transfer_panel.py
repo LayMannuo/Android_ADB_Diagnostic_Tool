@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QTextEdit, QVBoxLayout
 
-from app.gui.styles import CARD_TITLE_STYLE, style_button, style_card
+from app.gui.styles import (
+    CARD_TITLE_STYLE,
+    RESULT_FAILURE_STYLE,
+    RESULT_IDLE_STYLE,
+    RESULT_RUNNING_STYLE,
+    RESULT_SUCCESS_STYLE,
+    style_button,
+    style_card,
+)
 
 
 class FileTransferPanel(QFrame):
@@ -42,6 +50,14 @@ class FileTransferPanel(QFrame):
         style_button(self.pull_button, "primary", "执行 adb pull，把设备文件拉取到本地。")
         layout.addWidget(self.push_button)
         layout.addWidget(self.pull_button)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.status = QLabel("等待文件传输。目标路径填目录时会自动保留本地文件名和后缀。")
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet(RESULT_IDLE_STYLE)
+        layout.addWidget(self.progress)
+        layout.addWidget(self.status)
         note = QTextEdit("普通客户建议使用 /sdcard/Download/。/system、/vendor、/product、/data 通常需要 adb root + adb remount；失败可能是设备权限限制。")
         note.setReadOnly(True)
         note.setMaximumHeight(80)
@@ -64,3 +80,14 @@ class FileTransferPanel(QFrame):
 
     def pull_values(self) -> tuple[str, Path]:
         return self.pull_path.text().strip(), Path(self.local_dir.text())
+
+    def set_running(self, text: str):
+        self.progress.setRange(0, 0)
+        self.status.setStyleSheet(RESULT_RUNNING_STYLE)
+        self.status.setText(text)
+
+    def set_result(self, success: bool, text: str):
+        self.progress.setRange(0, 1)
+        self.progress.setValue(1 if success else 0)
+        self.status.setStyleSheet(RESULT_SUCCESS_STYLE if success else RESULT_FAILURE_STYLE)
+        self.status.setText(text)

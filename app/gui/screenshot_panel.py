@@ -1,7 +1,16 @@
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QSpinBox, QVBoxLayout
 
 from app.core.ui_text import RECORD_BUTTON_TEXT
-from app.gui.styles import CARD_TITLE_STYLE, style_button, style_card
+from app.gui.styles import (
+    CARD_TITLE_STYLE,
+    RESULT_FAILURE_STYLE,
+    RESULT_IDLE_STYLE,
+    RESULT_RUNNING_STYLE,
+    RESULT_SUCCESS_STYLE,
+    style_button,
+    style_card,
+)
 
 
 class ScreenshotPanel(QFrame):
@@ -38,6 +47,26 @@ class ScreenshotPanel(QFrame):
         buttons.addStretch(1)
         self.preview = QLabel("截图成功后将在这里显示预览")
         self.preview.setMinimumHeight(140)
-        self.preview.setStyleSheet("border: 1px solid #dfe3ea; color: #5f6368; padding: 8px;")
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setStyleSheet("border: 1px solid #dfe3ea; color: #5f6368; padding: 8px; background: #fbfcfe;")
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.status = QLabel("等待截图或录屏。")
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet(RESULT_IDLE_STYLE)
         layout.addLayout(buttons)
+        layout.addWidget(self.progress)
+        layout.addWidget(self.status)
         layout.addWidget(self.preview)
+
+    def set_running(self, text: str):
+        self.progress.setRange(0, 0)
+        self.status.setStyleSheet(RESULT_RUNNING_STYLE)
+        self.status.setText(text)
+
+    def set_result(self, success: bool, text: str):
+        self.progress.setRange(0, 1)
+        self.progress.setValue(1 if success else 0)
+        self.status.setStyleSheet(RESULT_SUCCESS_STYLE if success else RESULT_FAILURE_STYLE)
+        self.status.setText(text)

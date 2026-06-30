@@ -11,7 +11,9 @@ from PySide6.QtWidgets import QGroupBox
 
 from app.core.adb_manager import AdbManager
 from app.core.command_runner import CommandResult, CommandRunner
+from app.core.file_transfer import FileTransfer
 from app.core.report_generator import ReportGenerator
+from app.core.screenshot_manager import PNG_SIGNATURE, is_valid_png, normalize_screencap_png
 from app.core.single_log_collector import analyze_log_text, single_log_commands
 from app.core.status_messages import status_detail
 from app.core.utils import hidden_subprocess_kwargs, safe_text, sanitize_filename
@@ -170,6 +172,95 @@ class CoreBehaviorTests(unittest.TestCase):
     def test_hidden_subprocess_kwargs_prevents_console_windows(self):
         kwargs = hidden_subprocess_kwargs()
         self.assertIn("creationflags", kwargs)
+
+    def test_screenshot_rejects_invalid_exec_out_png_and_uses_fallback(self):
+        from app.core import screenshot_manager
+
+        class FakeCompleted:
+            returncode = 0
+            stdout = b"not a png"
+            stderr = b""
+
+        class FakeAdb:
+            serial = "ABC123"
+
+            def set_serial(self, serial):
+                self.serial = serial
+
+            def build_command(self, args):
+                return ["adb", *args]
+
+            def run(self, args, runner, output_path, category, name, timeout):
+                if args[:2] == ["pull", "/sdcard/fae_screenshot.png"]:
+                    Path(args[2]).write_bytes(PNG_SIGNATURE + b"fake-IEND")
+                return CommandResult(
+                    category=category,
+                    name=name,
+                    command="adb " + " ".join(args),
+                    output_file=str(output_path),
+                    start_time="2026-06-30T00:00:00",
+                    end_time="2026-06-30T00:00:01",
+                    duration_seconds=1,
+                    success=True,
+                    exit_code=0,
+                    status="SUCCESS",
+                    error="",
+                )
+
+        old_run = screenshot_manager.subprocess.run
+        screenshot_manager.subprocess.run = lambda *args, **kwargs: FakeCompleted()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                runner = CommandRunner(root / "command_status.json")
+                path = screenshot_manager.ScreenshotManager(FakeAdb(), root).capture(runner)
+
+                self.assertIsNotNone(path)
+                self.assertTrue(is_valid_png(path.read_bytes()))
+                self.assertNotEqual(path.read_bytes(), b"not a png")
+        finally:
+            screenshot_manager.subprocess.run = old_run
+
+    def test_screenshot_normalizes_shell_crlf_png_bytes(self):
+        damaged = b"\x89PNG\r\r\n\x1a\npayload-IEND"
+
+        fixed = normalize_screencap_png(damaged)
+
+        self.assertTrue(fixed.startswith(PNG_SIGNATURE))
+        self.assertTrue(is_valid_png(fixed))
+
+    def test_file_transfer_push_appends_filename_for_directory_target_and_preserves_exe_suffix(self):
+        class FakeAdb:
+            def __init__(self):
+                self.commands = []
+
+            def run(self, args, runner, output_path, category, name, timeout):
+                self.commands.append(args)
+                return CommandResult(
+                    category=category,
+                    name=name,
+                    command="adb " + " ".join(args),
+                    output_file=str(output_path),
+                    start_time="2026-06-30T00:00:00",
+                    end_time="2026-06-30T00:00:01",
+                    duration_seconds=1,
+                    success=True,
+                    exit_code=0,
+                    status="SUCCESS",
+                    error="",
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            local = root / "Debug Tool.exe"
+            local.write_bytes(b"exe")
+            runner = CommandRunner(root / "command_status.json")
+            adb = FakeAdb()
+
+            result = FileTransfer(adb, root).push(runner, local, "/system/bin")
+
+            self.assertEqual(adb.commands[0][-1], "/system/bin/Debug Tool.exe")
+            self.assertIn("Debug Tool.exe", result.error)
 
     def test_status_detail_contains_reason_and_solution_for_failure(self):
         detail = status_detail("PERMISSION_DENIED", "permission denied")
@@ -1239,6 +1330,109 @@ class CoreBehaviorTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_restart_adb_uses_background_worker_instead_of_blocking_ui_thread(self):
+        captured = {}
+
+        class FakeSignal:
+            def connect(self, callback):
+                captured.setdefault("connections", []).append(callback)
+
+        class FakeTaskWorker:
+            done = FakeSignal()
+            failed = FakeSignal()
+
+            def __init__(self, func, *args, **kwargs):
+                captured["func"] = func
+
+            def start(self):
+                captured["started"] = True
+
+        class BlockingAdb:
+            def quick_run(self, *args, **kwargs):
+                raise AssertionError("restart_adb should not run adb synchronously on the UI thread")
+
+        old_worker = main_window_module.TaskWorker
+        old_info = main_window_module.show_info
+        old_warning = main_window_module.show_warning
+        main_window_module.TaskWorker = FakeTaskWorker
+        main_window_module.show_info = lambda *args, **kwargs: None
+        main_window_module.show_warning = lambda *args, **kwargs: None
+        window = main_window_module.MainWindow()
+        try:
+            window.adb = BlockingAdb()
+            window.restart_adb()
+
+            self.assertTrue(captured.get("started"))
+            self.assertIn("func", captured)
+        finally:
+            window.close()
+            main_window_module.TaskWorker = old_worker
+            main_window_module.show_info = old_info
+            main_window_module.show_warning = old_warning
+
+    def test_stop_single_live_log_schedules_analysis_in_background(self):
+        captured = {}
+
+        class FakeSignal:
+            def connect(self, callback):
+                captured.setdefault("connections", []).append(callback)
+
+        class FakeTaskWorker:
+            done = FakeSignal()
+            failed = FakeSignal()
+
+            def __init__(self, func, *args, **kwargs):
+                captured["func"] = func
+
+            def start(self):
+                captured["started"] = True
+
+        class FakeLiveWorker:
+            def requestInterruption(self):
+                captured["interrupted"] = True
+
+            def stop(self):
+                captured["stopped"] = True
+
+            def wait(self, timeout):
+                captured["wait_timeout"] = timeout
+                return True
+
+            class line:
+                @staticmethod
+                def disconnect(*args, **kwargs):
+                    pass
+
+            class status:
+                @staticmethod
+                def disconnect(*args, **kwargs):
+                    pass
+
+        def fail_if_called_on_ui_thread(*args, **kwargs):
+            raise AssertionError("log analysis should run in a background worker")
+
+        old_worker = main_window_module.TaskWorker
+        old_analyze = main_window_module.analyze_log_text
+        main_window_module.TaskWorker = FakeTaskWorker
+        main_window_module.analyze_log_text = fail_if_called_on_ui_thread
+        window = main_window_module.MainWindow()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                log_file = Path(temp_dir) / "live_logcat.txt"
+                log_file.write_text("FATAL EXCEPTION: main", encoding="utf-8")
+                window.single_live_worker = FakeLiveWorker()
+                window.single_live_file = log_file
+
+                window.stop_single_live_log()
+
+                self.assertTrue(captured.get("started"))
+                self.assertIn("func", captured)
+                self.assertTrue(captured.get("interrupted"))
+        finally:
+            window.close()
+            main_window_module.TaskWorker = old_worker
+            main_window_module.analyze_log_text = old_analyze
+
     def test_apk_install_panel_exposes_batch_queue_controls(self):
         panel = ApkInstallPanel()
 
@@ -1322,7 +1516,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertIn(r"dist\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn(
-            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.1/Android_ADB_Diagnostic_Tool_v1.1.1.exe",
+            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.2/Android_ADB_Diagnostic_Tool_v1.1.2.exe",
             readme,
         )
         self.assertNotIn("Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe", readme)
@@ -1337,7 +1531,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         window = main_window_module.MainWindow()
         try:
-            self.assertEqual(APP_VERSION, "1.1.1")
+            self.assertEqual(APP_VERSION, "1.1.2")
             self.assertIn(f"v{APP_VERSION}", APP_WINDOW_TITLE)
             self.assertEqual(window.windowTitle(), APP_WINDOW_TITLE)
             self.assertIn(f"v{APP_VERSION}", window.app_title.text())
@@ -1356,7 +1550,7 @@ class CoreBehaviorTests(unittest.TestCase):
         )
         landing_text = landing.read_text(encoding="utf-8")
         self.assertIn("Android 通用 ADB 诊断助手", landing_text)
-        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.1.exe", landing_text)
+        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.2.exe", landing_text)
         self.assertIn("googlefa92bf9bd382d8db.html", sitemap.read_text(encoding="utf-8"))
 
 

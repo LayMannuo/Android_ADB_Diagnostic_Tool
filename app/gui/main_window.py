@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -684,8 +684,18 @@ class MainWindow(QMainWindow):
 
     def restart_adb(self):
         self.set_running_status("正在运行：adb kill-server / adb start-server，重启 ADB 服务...")
-        self.adb.quick_run(["kill-server"], timeout=10, use_serial=False)
-        code, output = self.adb.quick_run(["start-server"], timeout=10, use_serial=False)
+        def work():
+            _, kill_output = self.adb.quick_run(["kill-server"], timeout=15, use_serial=False)
+            code, start_output = self.adb.quick_run(["start-server"], timeout=20, use_serial=False)
+            return code, (kill_output + "\n" + start_output).strip()
+
+        self.worker = TaskWorker(work)
+        self.worker.done.connect(self.on_restart_adb_done)
+        self.worker.failed.connect(self.on_task_failed)
+        self.worker.start()
+
+    def on_restart_adb_done(self, result):
+        code, output = result
         self._set_busy(False)
         self.append_log(output)
         self.set_result_status("重启 ADB 服务", "SUCCESS" if code == 0 else "FAILED", output)
@@ -934,10 +944,25 @@ class MainWindow(QMainWindow):
             except RuntimeError:
                 pass
             self.single_live_worker = None
-        if self.single_live_file and self.single_live_file.exists():
-            text = self.single_live_file.read_text(encoding="utf-8", errors="replace")
+        self.single_log_panel.set_running("正在停止抓取并分析日志，请稍候...")
+        log_file = self.single_live_file
+
+        def work():
+            if not log_file or not log_file.exists():
+                return None
+            text = log_file.read_text(encoding="utf-8", errors="replace")
             analysis = analyze_log_text(text)
-            analysis_text, conclusion, counts = self._format_analysis(self.single_live_file, analysis)
+            analysis_text, conclusion, counts = self._format_analysis(log_file, analysis)
+            return analysis_text, conclusion, counts
+
+        self.worker = TaskWorker(work)
+        self.worker.done.connect(self.on_single_live_analysis_done)
+        self.worker.failed.connect(lambda msg: self.single_log_panel.set_failure("分析失败：工具执行异常。", f"原因：{msg}\n解决：确认日志文件可读取后重试。"))
+        self.worker.start()
+
+    def on_single_live_analysis_done(self, payload):
+        if payload:
+            analysis_text, conclusion, counts = payload
             self.single_log_panel.set_success("持续抓取已停止，并已完成简单分析。", analysis_text, conclusion, counts)
         else:
             self.single_log_panel.set_failure("持续抓取已停止，但未生成日志文件。", "原因：设备可能未连接、未授权或日志命令未启动。\n解决：检测设备后重试。")
@@ -1350,6 +1375,10 @@ class MainWindow(QMainWindow):
 
     def on_task_failed(self, message: str):
         self._set_busy(False)
+        if self.screenshot_panel.progress.maximum() == 0:
+            self.screenshot_panel.set_result(False, f"操作失败：{message}")
+        if self.file_panel.progress.maximum() == 0:
+            self.file_panel.set_result(False, f"传输失败：{message}")
         self.set_result_status("任务失败", "FAILED", message)
 
     def _set_busy(self, busy: bool):
@@ -1425,6 +1454,7 @@ class MainWindow(QMainWindow):
 
     def take_screenshot(self):
         self.set_running_status("正在运行：截屏 adb exec-out screencap -p")
+        self.screenshot_panel.set_running("正在截屏：优先使用 exec-out，失败会自动改用设备端截图后拉取。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1439,14 +1469,26 @@ class MainWindow(QMainWindow):
         self._set_busy(False)
         if path:
             pix = QPixmap(str(path))
-            self.screenshot_panel.preview.setPixmap(pix.scaledToHeight(140))
+            if pix.isNull():
+                self.screenshot_panel.preview.clear()
+                self.screenshot_panel.set_result(False, "截图失败：生成的文件不是有效图片，请查看运行日志。")
+                self.set_result_status("截屏失败", "FAILED", "生成的截图文件无法打开，已判定为无效图片。")
+                return
+            preview_size = self.screenshot_panel.preview.size()
+            self.screenshot_panel.preview.setPixmap(
+                pix.scaled(preview_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            self.screenshot_panel.set_result(True, f"截图成功：{path}")
             self.set_result_status("截屏成功", "SUCCESS", path=path)
         else:
-            self.set_result_status("截屏失败", "FAILED", "设备未连接、未授权或不支持截屏命令。")
+            self.screenshot_panel.preview.clear()
+            self.screenshot_panel.set_result(False, "截图失败：未生成有效 PNG 文件。")
+            self.set_result_status("截屏失败", "FAILED", "设备未连接、未授权、不支持截屏命令，或 ADB 返回了损坏图片。")
 
     def record_screen(self):
         seconds = self.screenshot_panel.record_seconds.value()
         self.set_running_status(f"正在运行：录制屏幕 {seconds} 秒，请勿拔掉设备。")
+        self.screenshot_panel.set_running(f"正在录屏：预计 {seconds} 秒，完成后会自动拉取到本地。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1460,13 +1502,16 @@ class MainWindow(QMainWindow):
     def on_record_done(self, path):
         self._set_busy(False)
         if path:
+            self.screenshot_panel.set_result(True, f"录屏成功：{path}")
             self.set_result_status("录屏成功", "SUCCESS", path=path)
         else:
+            self.screenshot_panel.set_result(False, "录屏失败：设备可能不支持 screenrecord，或当前连接/权限不足。")
             self.set_result_status("录屏失败", "UNSUPPORTED", "设备可能不支持 screenrecord，或当前连接/权限不足。")
 
     def push_file(self):
         local, target = self.file_panel.push_values()
         self.set_running_status(f"正在运行：adb push {local} {target}")
+        self.file_panel.set_running(f"正在推送文件：{local}\n目标：{target}\n大文件或系统目录可能耗时较长，请等待结果。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1480,9 +1525,11 @@ class MainWindow(QMainWindow):
     def pull_file(self):
         device_path, local_dir = self.file_panel.pull_values()
         if not device_path:
+            self.file_panel.set_result(False, "设备路径不能为空。")
             self.set_result_status("输入错误", "FAILED", "设备路径不能为空。")
             return
         self.set_running_status(f"正在运行：adb pull {device_path} {local_dir}")
+        self.file_panel.set_running(f"正在拉取文件：{device_path}\n保存目录：{local_dir}\n请等待传输完成。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1495,6 +1542,8 @@ class MainWindow(QMainWindow):
 
     def on_transfer_done(self, title: str, result):
         self._set_busy(False)
+        message = result.error or ("传输完成。" if result.success else "传输失败，请查看运行提示。")
+        self.file_panel.set_result(result.success, message)
         self.set_result_status(title, result.status, result.error)
 
     def closeEvent(self, event):
