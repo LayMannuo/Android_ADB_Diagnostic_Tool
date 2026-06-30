@@ -15,7 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.single_log_collector import single_log_commands
-from app.gui.styles import CARD_TITLE_STYLE, RESULT_FAILURE_STYLE, RESULT_IDLE_STYLE, RESULT_RUNNING_STYLE, RESULT_SUCCESS_STYLE, STEP_BADGE_STYLE, style_button, style_card
+from app.gui.styles import (
+    CARD_TITLE_STYLE,
+    RESULT_FAILURE_STYLE,
+    RESULT_IDLE_STYLE,
+    RESULT_RUNNING_STYLE,
+    RESULT_SUCCESS_STYLE,
+    make_step_header,
+    style_button,
+    style_card,
+)
 
 
 class SingleLogPanel(QFrame):
@@ -36,10 +45,12 @@ class SingleLogPanel(QFrame):
         title.setStyleSheet(CARD_TITLE_STYLE)
         layout.addWidget(title)
 
-        hero = QLabel("1 选择日志类型：默认保留设备已缓存日志；需要丢弃旧日志时再手动清除缓存。")
-        hero.setWordWrap(True)
-        hero.setStyleSheet(STEP_BADGE_STYLE)
+        hero = make_step_header("1 选择日志类型")
         layout.addWidget(hero)
+        hero_hint = QLabel("默认保留设备已缓存日志；需要丢弃旧日志时再手动清除缓存。")
+        hero_hint.setWordWrap(True)
+        hero_hint.setStyleSheet(RESULT_IDLE_STYLE)
+        layout.addWidget(hero_hint)
 
         selector = QGridLayout()
         self.combo = QComboBox()
@@ -47,7 +58,7 @@ class SingleLogPanel(QFrame):
             self.combo.addItem(str(item["title"]), str(item["name"]))
         self.category = QLabel()
         self.category.setWordWrap(True)
-        self.category.setStyleSheet("font-weight: 700; color: #1a73e8;")
+        self.category.setStyleSheet("font-weight: 500; color: #1a73e8;")
         self.description = QLabel()
         self.description.setWordWrap(True)
         self.focus = QLabel()
@@ -75,36 +86,36 @@ class SingleLogPanel(QFrame):
         selector.addWidget(self.capability, 6, 1)
         layout.addLayout(selector)
 
-        action_title = QLabel("2 选择抓取方式")
-        action_title.setStyleSheet(STEP_BADGE_STYLE)
+        action_title = make_step_header("2 选择抓取方式")
         layout.addWidget(action_title)
 
-        actions = QHBoxLayout()
+        self.primary_actions_row = QHBoxLayout()
+        self.utility_actions_row = QHBoxLayout()
         self.history_button = QPushButton("导出已缓存日志")
         self.start_live_button = QPushButton("开始持续抓取（含缓存）")
         self.stop_live_button = QPushButton("停止抓取并分析")
         self.clear_device_log_button = QPushButton("清除设备日志缓存（高级）")
         self.clear_display_button = QPushButton("清空页面显示")
         self.open_button = QPushButton("打开日志目录")
-        style_button(self.history_button, "primary", "导出设备当前已缓存日志，并自动做对应类型的简单分析。")
-        style_button(self.start_live_button, "success", "持续抓取选中日志项：先接收设备已缓存日志，再继续追加新增日志。")
-        style_button(self.stop_live_button, "warning", "停止持续抓取，并对已保存的完整日志文件做简单分析。")
-        style_button(self.clear_device_log_button, "danger", "高级操作：清空设备当前日志缓存。只有明确要丢弃旧日志时使用。")
-        style_button(self.clear_display_button, "secondary", "只清空软件页面显示，不删除已保存文件。")
-        style_button(self.open_button, "secondary", "打开当前单项日志保存目录。")
-        for button in [
-            self.history_button,
-            self.start_live_button,
-            self.stop_live_button,
-            self.clear_device_log_button,
-            self.clear_display_button,
-            self.open_button,
-        ]:
-            actions.addWidget(button)
-        layout.addLayout(actions)
+        style_button(self.history_button, "primary", "导出设备当前已缓存日志，并自动做对应类型的简单分析。", "download")
+        style_button(self.start_live_button, "success", "持续抓取选中日志项：先接收设备已缓存日志，再继续追加新增日志。", "record")
+        style_button(self.stop_live_button, "warning", "停止持续抓取，并对已保存的完整日志文件做简单分析。", "stop")
+        style_button(self.clear_device_log_button, "secondary", "高级操作：清空设备当前日志缓存。只有明确要丢弃旧日志时使用。", "clear")
+        style_button(self.clear_display_button, "secondary", "只清空软件页面显示，不删除已保存文件。", "clear")
+        style_button(self.open_button, "secondary", "打开当前单项日志保存目录。", "folder")
+        self.primary_actions_row.addWidget(self.history_button)
+        self.primary_actions_row.addWidget(self.start_live_button)
+        self.primary_actions_row.addWidget(self.stop_live_button)
+        self.primary_actions_row.addStretch(1)
+        self.primary_actions_row.addWidget(self.open_button)
+        self.utility_actions_row.addWidget(self.clear_display_button)
+        self.utility_actions_row.addWidget(self.clear_device_log_button)
+        self.utility_actions_row.addStretch(1)
+        layout.addLayout(self.primary_actions_row)
+        layout.addLayout(self.utility_actions_row)
         advanced_hint = QLabel("高级操作说明：清除设备日志缓存会丢弃旧日志；默认不要清除，除非你明确要重新开始采集。")
         advanced_hint.setWordWrap(True)
-        advanced_hint.setStyleSheet("color: #b3261e; background: #fff5f5; padding: 8px; border: 1px solid #f0b8b8;")
+        advanced_hint.setStyleSheet("color: #7a4b00; background: #fff8e6; padding: 8px; border: 1px solid #f4d08b; border-radius: 6px;")
         layout.addWidget(advanced_hint)
 
         self.progress = QProgressBar()
@@ -120,7 +131,7 @@ class SingleLogPanel(QFrame):
         self.conclusion = QLabel("定位结论：暂无")
         self.conclusion.setWordWrap(True)
         self.conclusion.setMinimumHeight(72)
-        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #dfe3ea; background: #f8fafc; font-weight: 700;")
+        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #dfe3ea; background: #f8fafc; font-weight: 500;")
         self.counts = QLabel("关键字统计：暂无")
         self.counts.setWordWrap(True)
         self.counts.setMinimumHeight(72)
@@ -136,10 +147,9 @@ class SingleLogPanel(QFrame):
         self.live_preview = QTextEdit()
         self.live_preview.setReadOnly(True)
         self.live_preview.setMinimumHeight(160)
-        self.analysis_title = QLabel("3 分析结果 / 证据 / 下一步建议")
-        self.analysis_title.setStyleSheet(STEP_BADGE_STYLE)
+        self.analysis_title = make_step_header("3 分析结果 / 证据 / 下一步建议")
         self.live_preview_title = QLabel("实时预览")
-        self.live_preview_title.setStyleSheet("font-weight: 700; color: #202124;")
+        self.live_preview_title.setStyleSheet("font-weight: 500; color: #202124;")
         layout.addWidget(self.analysis_title)
         layout.addWidget(self.analysis)
         layout.addWidget(self.live_preview_title)
@@ -196,7 +206,7 @@ class SingleLogPanel(QFrame):
         self.result.setStyleSheet(RESULT_SUCCESS_STYLE)
         self.result.setText(text)
         self.conclusion.setText(conclusion)
-        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #b7dfc2; background: #f0fff4; font-weight: 700;")
+        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #b7dfc2; background: #f0fff4; font-weight: 500;")
         self.counts.setText(counts)
         self.analysis.setPlainText(analysis_text)
 
@@ -206,7 +216,7 @@ class SingleLogPanel(QFrame):
         self.result.setStyleSheet(RESULT_FAILURE_STYLE)
         self.result.setText(text)
         self.conclusion.setText("定位结论：抓取失败")
-        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #f0b8b8; background: #fff5f5; font-weight: 700;")
+        self.conclusion.setStyleSheet("padding: 10px; border: 1px solid #f0b8b8; background: #fff5f5; font-weight: 500;")
         self.analysis.setPlainText(analysis_text)
 
     def append_live_line(self, text: str):

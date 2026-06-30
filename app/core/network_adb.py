@@ -136,7 +136,7 @@ class ScanResult:
         return DeviceRecord(
             serial=self.endpoint,
             status=self.status,
-            connection="同一网络连接",
+            connection="网络 ADB 连接",
             endpoint=self.endpoint,
             model=self.model,
             brand=self.brand,
@@ -169,7 +169,7 @@ class DeviceRecord:
             return "请查看设备屏幕，点击允许 USB 调试。"
         if self.status == "离线":
             return "请重新插拔数据线，或重启 ADB 服务后刷新。"
-        if self.status == "发现候选设备":
+        if self.status in {"候选设备", "发现候选设备"}:
             return "端口有响应，但还未确认是 Android 调试设备。"
         return self.message or "请检查连接方式后重试。"
 
@@ -212,7 +212,7 @@ class NetworkAdbScanner:
                 port=port,
                 endpoint=endpoint,
                 status="连接失败",
-                message="端口未响应：请确认设备在同一网络，并已开启同一网络调试端口。",
+                message="端口未响应：请确认设备和电脑在同一局域网，并且设备网络 ADB 端口可访问。",
                 port_open=False,
             )
 
@@ -222,7 +222,7 @@ class NetworkAdbScanner:
                 ip=ip,
                 port=port,
                 endpoint=endpoint,
-                status="发现候选设备",
+                status="候选设备",
                 message=f"端口已响应，但 ADB 连接失败：{output.strip() or '无返回信息'}",
                 port_open=True,
                 adb_verified=False,

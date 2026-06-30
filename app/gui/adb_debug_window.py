@@ -53,17 +53,18 @@ class AdbCommandWorker(QThread):
 
 
 class AdbDebugWindow(QWidget):
-    def __init__(self, adb: AdbManager, project_root: Path):
+    def __init__(self, adb: AdbManager, project_root: Path, device_label: str = ""):
         super().__init__()
         self.adb = adb
         self.project_root = project_root
+        self.device_label = device_label or (adb.serial or "未选择设备")
         self.shell_mode = True
         self.worker: AdbCommandWorker | None = None
-        self.setWindowTitle("ADB 调试窗口")
+        self.setWindowTitle(f"ADB 调试 - {self.device_label}")
         self.resize(860, 560)
         self.setMinimumSize(520, 320)
         layout = QVBoxLayout(self)
-        self.mode_label = QLabel("当前模式：adb shell 简易模式。需要连续 cd、su、top、logcat 等完整交互时，将自动打开真实 CMD Shell。")
+        self.mode_label = QLabel(f"目标设备：{self.device_label}。当前模式：adb shell 简易模式。需要连续 cd、su、top、logcat 等完整交互时，将自动打开真实 CMD Shell。")
         self.mode_label.setWordWrap(True)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
@@ -92,11 +93,12 @@ class AdbDebugWindow(QWidget):
         self.save_button.clicked.connect(self.save_output)
         self.input.returnPressed.connect(self.run_command)
         self.stop_button.setEnabled(False)
-        style_button(self.run_button, "primary", "执行当前输入的 ADB 或 shell 命令。")
-        style_button(self.stop_button, "danger", "停止当前正在执行的命令。")
-        style_button(self.cmd_button, "engineer", "打开 Windows CMD，并直接进入 adb shell。")
-        style_button(self.save_button, "secondary", "保存当前窗口输出到 output/99_tool_runtime。")
-        style_button(self.clear_button, "secondary", "清空当前窗口显示，不删除已保存文件。")
+        style_button(self.run_button, "primary", "执行当前输入的 ADB 或 shell 命令。", "terminal")
+        style_button(self.stop_button, "danger", "停止当前正在执行的命令。", "stop")
+        style_button(self.cmd_button, "engineer", "打开 Windows CMD，并直接进入 adb shell。", "terminal")
+        style_button(self.save_button, "secondary", "保存当前窗口输出到 output/99_tool_runtime。", "save")
+        style_button(self.clear_button, "secondary", "清空当前窗口显示，不删除已保存文件。", "clear")
+        self.output.append(f"已绑定设备：{self.device_label}")
         self.output.append("已进入 adb shell 简易模式。输入 exit 可回到 ADB 命令模式；需要完整 shell 时会打开真实 CMD。")
 
     def run_command(self):
@@ -110,12 +112,12 @@ class AdbDebugWindow(QWidget):
             return
         if self.shell_mode and text.lower() == "exit":
             self.shell_mode = False
-            self.mode_label.setText(f"当前模式：ADB 命令模式。工作目录：{self.project_root}。输入 shell 回到 adb shell。")
+            self.mode_label.setText(f"目标设备：{self.device_label}。当前模式：ADB 命令模式。工作目录：{self.project_root}。输入 shell 回到 adb shell。")
             self.output.append("已退出 shell，回到软件 ADB 命令模式。")
             return
         if not self.shell_mode and text.lower() == "shell":
             self.shell_mode = True
-            self.mode_label.setText("当前模式：adb shell 简易模式。需要连续 cd、su、top、logcat 等完整交互时，将自动打开真实 CMD Shell。")
+            self.mode_label.setText(f"目标设备：{self.device_label}。当前模式：adb shell 简易模式。需要连续 cd、su、top、logcat 等完整交互时，将自动打开真实 CMD Shell。")
             self.output.append("已进入 adb shell 简易模式。")
             return
         self.run_button.setEnabled(False)

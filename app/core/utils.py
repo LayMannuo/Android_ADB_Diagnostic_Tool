@@ -149,6 +149,10 @@ def open_in_explorer(path: Path) -> None:
     os.startfile(str(path))
 
 
+def open_file_default(path: Path) -> None:
+    os.startfile(str(path.resolve()))
+
+
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 

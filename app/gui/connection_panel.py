@@ -5,7 +5,6 @@ import ipaddress
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
-    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -13,16 +12,25 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from app.core.network_adb import DEFAULT_NETWORK_ADB_PORT, DeviceRecord, NetworkRange, validate_network_range
-from app.gui.styles import CARD_TITLE_STYLE, MUTED_TEXT_STYLE, PANEL_HINT_STYLE, RESULT_IDLE_STYLE, style_button, style_card
+from app.gui.styles import (
+    CARD_TITLE_STYLE,
+    MUTED_TEXT_STYLE,
+    PANEL_HINT_STYLE,
+    RESULT_IDLE_STYLE,
+    SUMMARY_PILL_STYLE,
+    make_step_header,
+    style_button,
+    style_card,
+)
 
 
 class ConnectionPanel(QFrame):
@@ -37,73 +45,132 @@ class ConnectionPanel(QFrame):
         title = QLabel("设备连接中心")
         title.setStyleSheet(CARD_TITLE_STYLE)
         layout.addWidget(title)
-        self.summary = QLabel("先找到设备，再选择投屏、抓日志、安装 APK 或生成诊断包。")
+        self.summary = QLabel("连接是所有操作的第一步。先选择连接方式并确认设备“已可调试”，再执行投屏、日志、截图、文件传输或 APK 安装。")
         self.summary.setWordWrap(True)
         self.summary.setStyleSheet(PANEL_HINT_STYLE)
         layout.addWidget(self.summary)
 
+        self.method_title = make_step_header("1 选择连接方式")
+        layout.addWidget(self.method_title)
+        self.mode_tabs = QTabWidget()
+        self.mode_tabs.setDocumentMode(True)
+        self._method_tab_heights = [145, 200, 175]
+        self.mode_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.mode_tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #d9e1ec; border-radius: 8px; background: #ffffff; top: -1px; }"
+            "QTabBar::tab { background: #f8fafc; color: #475569; padding: 9px 18px; border: 1px solid #d9e1ec; border-bottom: none; min-width: 96px; }"
+            "QTabBar::tab:selected { background: #ffffff; color: #2563eb; font-weight: 500; }"
+        )
+        self.mode_tabs.addTab(self._build_usb_box(), "数据线连接")
+        self.mode_tabs.addTab(self._build_network_box(), "网络连接")
+        self.mode_tabs.addTab(self._build_scan_box(), "网段扫描")
+        self.mode_tabs.currentChanged.connect(self._apply_method_tab_height)
+        self._apply_method_tab_height(0)
+        layout.addWidget(self.mode_tabs)
+
         self.device_list_frame = self._build_device_box()
         layout.addWidget(self.device_list_frame)
 
-        self.mode_tabs = QTabWidget()
-        self.mode_tabs.setDocumentMode(True)
-        self.mode_tabs.setStyleSheet(
-            "QTabWidget::pane { border: 1px solid #d9e1ec; border-radius: 8px; background: #ffffff; top: -1px; }"
-            "QTabBar::tab { background: #f5f7fb; color: #374151; padding: 9px 16px; border: 1px solid #d9e1ec; border-bottom: none; min-width: 86px; }"
-            "QTabBar::tab:selected { background: #ffffff; color: #1d4ed8; font-weight: 700; }"
-        )
-        self.mode_tabs.addTab(self._build_usb_box(), "数据线")
-        self.mode_tabs.addTab(self._build_network_box(), "同一网络")
-        self.mode_tabs.addTab(self._build_pair_box(), "无线配对")
-        self.mode_tabs.addTab(self._build_engineer_box(), "高级")
-        layout.addWidget(self.mode_tabs)
-
-        self.note = QTextEdit(
-            "使用建议：普通客户优先使用“数据线连接”或“扫描当前网络”。"
-            "同一网络连接默认端口为 5566，可按现场配置修改；只有通过 ADB 验证后才会显示“已可调试”。"
+        self.note_title = make_step_header("3 使用建议")
+        layout.addWidget(self.note_title)
+        self.note = QLabel(
+            "使用建议：数据线连接用于 USB 检测和授权；网络连接用于已知 IP 的设备；网段扫描用于不知道设备 IP 的场景。"
+            "无线配对是网络连接的辅助步骤，适用于 Android 11+。"
+            "只有通过 ADB 验证后才会显示“已可调试”。"
             "root、remount 属于工程师操作，量产设备不支持时通常是系统限制。"
         )
-        self.note.setReadOnly(True)
-        self.note.setMaximumHeight(78)
+        self.note.setWordWrap(True)
+        self.note.setStyleSheet(PANEL_HINT_STYLE)
         layout.addWidget(self.note)
+        self.engineer_tools_frame = self._build_engineer_box()
+        layout.addWidget(self.engineer_tools_frame)
 
     def title(self) -> str:
         return self._title
 
+    def _apply_method_tab_height(self, index: int) -> None:
+        height = self._method_tab_heights[index] if 0 <= index < len(self._method_tab_heights) else self._method_tab_heights[0]
+        self.mode_tabs.setMinimumHeight(height)
+        self.mode_tabs.setMaximumHeight(height)
+
     def _build_usb_box(self) -> QWidget:
         box = QWidget()
-        layout = QGridLayout(box)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(12)
-        layout.setVerticalSpacing(10)
-        hint = QLabel("第一次使用建议先接数据线，检测到设备后可一键开启同一网络调试。")
-        hint.setWordWrap(True)
-        hint.setStyleSheet(RESULT_IDLE_STYLE)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        layout.setAlignment(Qt.AlignTop)
+
+        self.usb_hint = QLabel("适合第一次连接、USB 授权确认、offline/unauthorized 排查。数据线连接不涉及 IP 或端口。")
+        self.usb_hint.setWordWrap(True)
+        self.usb_hint.setStyleSheet(RESULT_IDLE_STYLE)
+        self.usb_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(self.usb_hint)
+
+        actions = QHBoxLayout()
         self.status_button = QPushButton("检测数据线设备")
-        self.tcpip_button = QPushButton("开启同一网络调试")
-        self.port = QLineEdit(DEFAULT_NETWORK_ADB_PORT)
-        self.port.setMaximumWidth(90)
-        self.port.setToolTip("同一网络调试端口，默认 5566，可修改。")
-        style_button(self.status_button, "primary", "刷新数据线连接和授权状态。")
-        style_button(self.tcpip_button, "success", "对当前选中数据线设备开启同一网络调试端口。")
-        layout.addWidget(hint, 0, 0, 1, 3)
-        layout.addWidget(QLabel("端口"), 1, 0)
-        layout.addWidget(self.port, 1, 1)
-        layout.addWidget(self.status_button, 1, 2)
-        layout.addWidget(self.tcpip_button, 2, 0, 1, 3)
+        self.usb_refresh_button = QPushButton("刷新")
+        self.restart_adb_button = QPushButton("重启 ADB")
+        style_button(self.status_button, "primary", "检测 USB 连接、本机 ADB 和设备授权状态。", "device")
+        style_button(self.usb_refresh_button, "secondary", "重新刷新当前设备列表。", "refresh")
+        style_button(self.restart_adb_button, "warning", "重启本机 ADB 服务，适合设备 offline 或连接异常时使用。", "restart")
+        actions.addWidget(self.status_button)
+        actions.addWidget(self.usb_refresh_button)
+        actions.addWidget(self.restart_adb_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
         return box
 
     def _build_network_box(self) -> QWidget:
         box = QWidget()
         layout = QVBoxLayout(box)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignTop)
+
+        self.network_hint = QLabel("适合已知设备 IP 的场景。输入 IP 和端口后直接连接；Android 11+ 可先完成无线配对。")
+        self.network_hint.setWordWrap(True)
+        self.network_hint.setStyleSheet(RESULT_IDLE_STYLE)
+        self.network_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(self.network_hint)
+
+        manual = QHBoxLayout()
+        self.ip = QLineEdit()
+        self.ip.setPlaceholderText("指定设备 IP，例如 192.168.28.20")
+        self.connect_port = QLineEdit(DEFAULT_NETWORK_ADB_PORT)
+        self.connect_port.setMaximumWidth(90)
+        self.connect_port.setToolTip("连接指定 IP 时使用的 ADB 网络端口，默认 5566。")
+        self.connect_button = QPushButton("连接设备")
+        self.disconnect_button = QPushButton("断开网络设备")
+        style_button(self.connect_button, "success", "连接指定 IP 和端口的网络 ADB 设备。", "connect")
+        style_button(self.disconnect_button, "warning", "断开指定 IP 或当前选中的网络 ADB 设备。数据线设备请拔线或关闭 USB 调试。", "disconnect")
+        manual.addWidget(QLabel("指定 IP"))
+        manual.addWidget(self.ip, 1)
+        manual.addWidget(QLabel("连接端口"))
+        manual.addWidget(self.connect_port)
+        manual.addWidget(self.connect_button)
+        manual.addWidget(self.disconnect_button)
+        layout.addLayout(manual)
+
+        pair_title = QLabel("无线配对（Android 11+，可选）")
+        pair_title.setStyleSheet("font-size: 14px; font-weight: 500; color: #1f2937;")
+        layout.addWidget(pair_title)
+        layout.addWidget(self._build_pair_box())
+        return box
+
+    def _build_scan_box(self) -> QWidget:
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        layout.setAlignment(Qt.AlignTop)
+
         quick = QHBoxLayout()
-        self.quick_scan_button = QPushButton("扫描当前网络")
+        self.quick_scan_button = QPushButton("扫描当前网段")
         self.scan_status = QLabel("默认扫描当前电脑所在网段，端口 5566。")
         self.scan_status.setWordWrap(True)
         self.scan_status.setStyleSheet(RESULT_IDLE_STYLE)
-        style_button(self.quick_scan_button, "primary", "自动识别当前网段并扫描可调试设备。")
+        self.scan_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        style_button(self.quick_scan_button, "primary", "自动识别当前网段并扫描可调试设备。", "scan")
         quick.addWidget(self.quick_scan_button)
         quick.addWidget(self.scan_status, 1)
         layout.addLayout(quick)
@@ -117,8 +184,8 @@ class ConnectionPanel(QFrame):
         self.saved_ranges.addItem("未保存常用网段")
         self.scan_range_button = QPushButton("扫描指定范围")
         self.save_range_button = QPushButton("保存网段")
-        style_button(self.scan_range_button, "secondary", "按起始 IP、结束 IP 和端口扫描。")
-        style_button(self.save_range_button, "secondary", "保存当前网段，方便下次复用。")
+        style_button(self.scan_range_button, "secondary", "按起始 IP、结束 IP 和端口扫描。", "scan")
+        style_button(self.save_range_button, "secondary", "保存当前网段，方便下次复用。", "save")
         range_form.addWidget(QLabel("起始 IP"), 0, 0)
         range_form.addWidget(self.start_ip, 0, 1)
         range_form.addWidget(QLabel("结束 IP"), 0, 2)
@@ -130,35 +197,32 @@ class ConnectionPanel(QFrame):
         range_form.addWidget(self.save_range_button, 1, 4)
         range_form.addWidget(self.scan_range_button, 1, 5)
         layout.addLayout(range_form)
-
-        manual = QHBoxLayout()
-        self.ip = QLineEdit()
-        self.ip.setPlaceholderText("指定设备 IP，例如 192.168.28.20")
-        self.connect_button = QPushButton("连接指定地址")
-        self.disconnect_button = QPushButton("断开连接")
-        style_button(self.connect_button, "success", "连接指定 IP 和端口的同一网络设备。")
-        style_button(self.disconnect_button, "warning", "断开指定或当前选中的同一网络设备。")
-        manual.addWidget(QLabel("指定 IP"))
-        manual.addWidget(self.ip, 1)
-        manual.addWidget(self.connect_button)
-        manual.addWidget(self.disconnect_button)
-        layout.addLayout(manual)
         return box
 
     def _build_pair_box(self) -> QWidget:
         box = QWidget()
-        layout = QFormLayout(box)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout = QGridLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(6)
         self.pair_ip = QLineEdit()
         self.pair_port = QLineEdit()
         self.pair_code = QLineEdit()
+        self.pair_ip.setPlaceholderText("配对 IP")
+        self.pair_port.setPlaceholderText("端口")
+        self.pair_code.setPlaceholderText("配对码")
+        self.pair_port.setMaximumWidth(90)
+        self.pair_code.setMaximumWidth(120)
         self.pair_button = QPushButton("无线调试配对")
-        style_button(self.pair_button, "engineer", "Android 11+ 无线调试配对，配对成功后再连接设备地址。")
-        layout.addRow("配对 IP 地址", self.pair_ip)
-        layout.addRow("配对端口", self.pair_port)
-        layout.addRow("配对码", self.pair_code)
-        layout.addRow(QWidget(), self.pair_button)
+        style_button(self.pair_button, "engineer", "Android 11+ 无线调试配对，配对成功后再连接设备地址。", "connect")
+        layout.addWidget(QLabel("配对 IP"), 0, 0)
+        layout.addWidget(self.pair_ip, 0, 1)
+        layout.addWidget(QLabel("端口"), 0, 2)
+        layout.addWidget(self.pair_port, 0, 3)
+        layout.addWidget(QLabel("配对码"), 0, 4)
+        layout.addWidget(self.pair_code, 0, 5)
+        layout.addWidget(self.pair_button, 0, 6)
+        layout.setColumnStretch(1, 1)
         return box
 
     def _build_device_box(self) -> QFrame:
@@ -167,25 +231,43 @@ class ConnectionPanel(QFrame):
         layout = QVBoxLayout(box)
         layout.setContentsMargins(14, 12, 14, 14)
         title_row = QHBoxLayout()
-        title = QLabel("已发现设备")
-        title.setStyleSheet("font-size: 15px; font-weight: 700; color: #1f2937;")
-        self.empty_device_hint = QLabel("当前没有设备。请先检测数据线设备，或扫描同一网络。")
+        self.device_list_title = make_step_header("2 设备列表")
+        self.empty_device_hint = QLabel("当前没有设备。请先选择数据线连接、网络连接或网段扫描。")
         self.empty_device_hint.setStyleSheet(MUTED_TEXT_STYLE)
         self.empty_device_hint.setWordWrap(True)
-        title_row.addWidget(title)
+        title_row.addWidget(self.device_list_title)
         title_row.addStretch(1)
         title_row.addWidget(self.empty_device_hint)
         layout.addLayout(title_row)
+        summary = QHBoxLayout()
+        self.device_summary_labels = {
+            "found": QLabel("已发现 0 台"),
+            "ready": QLabel("已可调试 0 台"),
+            "current": QLabel("当前操作设备：未选择"),
+        }
+        for label in self.device_summary_labels.values():
+            label.setStyleSheet(SUMMARY_PILL_STYLE)
+            summary.addWidget(label)
+        summary.addStretch(1)
+        layout.addLayout(summary)
+        self.scope_hint = QLabel("选中一行后，投屏、截图、日志、文件传输和 ADB 调试窗口都针对该设备执行。")
+        self.scope_hint.setWordWrap(True)
+        self.scope_hint.setStyleSheet(MUTED_TEXT_STYLE)
+        layout.addWidget(self.scope_hint)
+        self.status_legend = QLabel("已可调试=可操作  未授权=确认授权  离线=不可操作  候选设备=待验证")
+        self.status_legend.setWordWrap(True)
+        self.status_legend.setStyleSheet(PANEL_HINT_STYLE)
+        layout.addWidget(self.status_legend)
         self.device_table = QTableWidget(0, 6)
-        self.device_table.setMinimumHeight(170)
-        self.device_table.setHorizontalHeaderLabels(["设备", "状态", "连接方式", "IP/端口", "系统", "下一步"])
+        self.device_table.setMinimumHeight(190)
+        self.device_table.setHorizontalHeaderLabels(["设备", "状态", "连接方式", "序列号/IP", "系统", "下一步"])
         self.device_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.device_table.setSelectionMode(QTableWidget.SingleSelection)
         self.device_table.verticalHeader().setVisible(False)
         self.device_table.setAlternatingRowColors(True)
         self.device_table.setStyleSheet(
             "QTableWidget { border: 1px solid #e5eaf2; border-radius: 6px; gridline-color: #edf1f6; selection-background-color: #dbeafe; selection-color: #111827; }"
-            "QHeaderView::section { background: #f8fafc; color: #374151; font-weight: 700; padding: 8px; border: none; border-right: 1px solid #e5eaf2; }"
+            "QHeaderView::section { background: #f8fafc; color: #374151; font-weight: 500; padding: 8px; border: none; border-right: 1px solid #e5eaf2; }"
             "QTableWidget::item { padding: 8px; }"
         )
         header = self.device_table.horizontalHeader()
@@ -196,12 +278,15 @@ class ConnectionPanel(QFrame):
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.Stretch)
         layout.addWidget(self.device_table)
+        self.device_table.itemSelectionChanged.connect(self._sync_device_summary)
         return box
 
     def _build_engineer_box(self) -> QWidget:
         box = QWidget()
         layout = QVBoxLayout(box)
         layout.setContentsMargins(16, 16, 16, 16)
+        title = make_step_header("4 工程师高级操作")
+        layout.addWidget(title)
         hint = QLabel("工程师高级操作。普通客户无需使用；量产设备不支持 root/remount 通常是系统限制。")
         hint.setWordWrap(True)
         hint.setStyleSheet(RESULT_IDLE_STYLE)
@@ -209,8 +294,8 @@ class ConnectionPanel(QFrame):
         engineer = QHBoxLayout()
         self.root_button = QPushButton("adb root")
         self.remount_button = QPushButton("adb remount")
-        style_button(self.root_button, "engineer", "工程机调试使用，量产设备通常不支持。")
-        style_button(self.remount_button, "engineer", "工程机写系统分区前使用，量产设备通常不支持。")
+        style_button(self.root_button, "engineer", "工程机调试使用，量产设备通常不支持。", "terminal")
+        style_button(self.remount_button, "engineer", "工程机写系统分区前使用，量产设备通常不支持。", "package")
         engineer.addWidget(self.root_button)
         engineer.addWidget(self.remount_button)
         engineer.addStretch(1)
@@ -218,7 +303,8 @@ class ConnectionPanel(QFrame):
         return box
 
     def endpoint(self) -> tuple[str, str]:
-        return self.ip.text().strip(), self.port.text().strip() or DEFAULT_NETWORK_ADB_PORT
+        port = self.connect_port.text().strip() or DEFAULT_NETWORK_ADB_PORT
+        return self.ip.text().strip(), port
 
     def pair_endpoint(self) -> tuple[str, str, str]:
         return self.pair_ip.text().strip(), self.pair_port.text().strip(), self.pair_code.text().strip()
@@ -246,6 +332,9 @@ class ConnectionPanel(QFrame):
     def set_devices(self, records: list[DeviceRecord]) -> None:
         self.records = records
         self.empty_device_hint.setVisible(not records)
+        ready_count = sum(1 for record in records if record.status == "已可调试")
+        self.device_summary_labels["found"].setText(f"已发现 {len(records)} 台")
+        self.device_summary_labels["ready"].setText(f"已可调试 {ready_count} 台")
         self.device_table.setRowCount(len(records))
         for row, record in enumerate(records):
             cells = [
@@ -266,6 +355,15 @@ class ConnectionPanel(QFrame):
                 self.device_table.setItem(row, column, item)
         if records and not self.device_table.selectionModel().selectedRows():
             self.device_table.selectRow(0)
+        self._sync_device_summary()
+
+    def _sync_device_summary(self) -> None:
+        serial = self.selected_serial()
+        record = next((item for item in self.records if item.serial == serial), None)
+        if not record:
+            self.device_summary_labels["current"].setText("当前操作设备：未选择")
+            return
+        self.device_summary_labels["current"].setText(f"当前操作设备：{record.display_name()} / {record.serial}")
 
     def add_or_update_devices(self, records: list[DeviceRecord]) -> None:
         by_serial = {record.serial: record for record in self.records}
@@ -287,7 +385,7 @@ class ConnectionPanel(QFrame):
             self.start_ip.setText(scan_range.start_ip)
             self.end_ip.setText(scan_range.end_ip)
             self.scan_port.setText(scan_range.port)
-            self.port.setText(scan_range.port)
+            self.connect_port.setText(scan_range.port)
 
     @staticmethod
     def _system_text(record: DeviceRecord) -> str:
@@ -306,6 +404,7 @@ class ConnectionPanel(QFrame):
             "已可调试": "#137333",
             "未授权": "#b06000",
             "离线": "#b3261e",
+            "候选设备": "#1a73e8",
             "发现候选设备": "#1a73e8",
             "连接失败": "#b3261e",
         }

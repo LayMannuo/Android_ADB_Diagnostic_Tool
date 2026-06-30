@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QSize, Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,7 +40,7 @@ from app.core.screen_mirror import start_screen_mirror
 from app.core.single_log_collector import SingleLogCollector, analyze_log_text
 from app.core.remount_status import evaluate_remount_result
 from app.core.status_messages import status_detail
-from app.core.utils import app_base_dir, ensure_dir, open_in_explorer, quote_command, sanitize_filename, timestamp
+from app.core.utils import app_base_dir, ensure_dir, open_file_default, open_in_explorer, quote_command, sanitize_filename, timestamp
 from app.core.version import APP_WINDOW_TITLE
 from app.gui.connection_panel import ConnectionPanel
 from app.gui.adb_debug_window import AdbDebugWindow
@@ -53,12 +53,14 @@ from app.gui.screenshot_panel import ScreenshotPanel
 from app.gui.single_log_panel import SingleLogPanel
 from app.gui.styles import (
     APP_PAGE_STYLE,
-    CARD_TITLE_STYLE,
     MUTED_TEXT_STYLE,
+    NAV_TABS_STYLE,
     PANEL_HINT_STYLE,
     RESULT_IDLE_STYLE,
     RESULT_SUCCESS_STYLE,
     STATUS_PILL_STYLE,
+    app_icon,
+    make_step_header,
     style_button,
     style_card,
 )
@@ -98,10 +100,12 @@ class MainWindow(QMainWindow):
         self.device_detail_worker: TaskWorker | None = None
         self.apk_batch_worker: TaskWorker | None = None
         self.live_log_window: LiveLogWindow | None = None
-        self.adb_debug_window: AdbDebugWindow | None = None
+        self.live_log_windows: dict[str, LiveLogWindow] = {}
+        self.adb_debug_windows: dict[str, AdbDebugWindow] = {}
         self.single_live_worker: LiveLogWorker | None = None
         self.single_live_file: Path | None = None
         self.setWindowTitle(APP_WINDOW_TITLE)
+        self.setWindowIcon(app_icon("adb", "#2563eb"))
         self.resize(1080, 760)
         self.setMinimumSize(640, 420)
         self._build_ui()
@@ -109,13 +113,25 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         tabs = QTabWidget()
+        tabs.setObjectName("mainTabs")
+        tabs.setDocumentMode(True)
+        tabs.tabBar().setMinimumHeight(48)
+        tabs.tabBar().setIconSize(QSize(18, 18))
+        tabs.setStyleSheet(NAV_TABS_STYLE)
         self.setCentralWidget(tabs)
-        tabs.addTab(self._scroll(self._build_diagnosis_page()), "快速诊断")
-        tabs.addTab(self._scroll(self._build_single_log_page()), "单项日志 / 问题分析")
-        tabs.addTab(self._scroll(self._build_apk_install_page()), "APK 安装")
-        tabs.addTab(self._scroll(self._build_feature_page()), "功能说明")
+        tab_specs = [
+            (self._build_connection_page(), "device", "设备连接"),
+            (self._build_diagnosis_page(), "diagnosis", "快速诊断"),
+            (self._build_single_log_page(), "log", "单项日志 / 问题分析"),
+            (self._build_apk_install_page(), "apk", "APK 安装"),
+            (self._build_feature_page(), "info", "功能说明"),
+        ]
+        for widget, icon_name, label in tab_specs:
+            index = tabs.addTab(self._scroll(widget), app_icon(icon_name, "#334155"), label)
+            tabs.tabBar().setTabData(index, icon_name)
         self._connect_signals()
-        self.append_log("工具已启动。请先点击“检测设备”。")
+        self.append_log("工具已启动。请先在“设备连接”页选择：数据线连接、网络连接或网段扫描。")
+        self._sync_target_action_enabled()
 
     def _scroll(self, widget: QWidget) -> QScrollArea:
         scroll = QScrollArea()
@@ -123,8 +139,20 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         return scroll
 
+    def _build_connection_page(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("appPage")
+        page.setStyleSheet(APP_PAGE_STYLE)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(14)
+        self.connection_panel = ConnectionPanel()
+        layout.addWidget(self.connection_panel)
+        return page
+
     def _build_diagnosis_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("appPage")
         page.setStyleSheet(APP_PAGE_STYLE)
         layout = QVBoxLayout(page)
         layout.setContentsMargins(18, 16, 18, 18)
@@ -135,17 +163,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.device_box)
         self.layout_priority["current_device"] = layout.indexOf(self.device_box)
 
-        self.connection_panel = ConnectionPanel()
-        layout.addWidget(self.connection_panel)
-        self.layout_priority["connection_center"] = layout.indexOf(self.connection_panel)
-
         support = QWidget()
         support_layout = QVBoxLayout(support)
         support_layout.setContentsMargins(0, 0, 0, 0)
         support_layout.setSpacing(8)
-        support_title = QLabel("辅助工具")
-        support_title.setStyleSheet(CARD_TITLE_STYLE)
-        support_layout.addWidget(support_title)
+        self.support_tools_section_title = make_step_header("3 辅助工具")
+        support_layout.addWidget(self.support_tools_section_title)
         lower = QGridLayout()
         lower.setHorizontalSpacing(12)
         lower.setVerticalSpacing(12)
@@ -160,14 +183,13 @@ class MainWindow(QMainWindow):
         log_box = QFrame()
         style_card(log_box)
         log_layout = QVBoxLayout(log_box)
-        log_title = QLabel("运行提示 / 工具日志")
-        log_title.setStyleSheet(CARD_TITLE_STYLE)
+        self.runtime_log_section_title = make_step_header("4 运行提示 / 工具日志")
         buttons = QHBoxLayout()
         self.live_log_button = QPushButton("打开实时日志")
         self.open_output_button = QPushButton("打开导出目录")
-        style_button(self.live_log_button, "secondary", "打开独立实时 logcat 窗口。")
-        style_button(self.open_output_button, "secondary", "打开 output 导出目录。")
-        buttons.addWidget(log_title)
+        style_button(self.live_log_button, "secondary", "打开独立实时 logcat 窗口。", "log")
+        style_button(self.open_output_button, "secondary", "打开 output 导出目录。", "folder")
+        buttons.addWidget(self.runtime_log_section_title)
         buttons.addStretch(1)
         buttons.addWidget(self.live_log_button)
         buttons.addWidget(self.open_output_button)
@@ -181,22 +203,31 @@ class MainWindow(QMainWindow):
 
     def _build_single_log_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("appPage")
+        page.setStyleSheet(APP_PAGE_STYLE)
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 16, 18, 18)
         self.single_log_panel = SingleLogPanel()
         layout.addWidget(self.single_log_panel)
         return page
 
     def _build_apk_install_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("appPage")
+        page.setStyleSheet(APP_PAGE_STYLE)
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 16, 18, 18)
         self.apk_install_panel = ApkInstallPanel()
         layout.addWidget(self.apk_install_panel)
         return page
 
     def _build_feature_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("appPage")
+        page.setStyleSheet(APP_PAGE_STYLE)
         layout = QVBoxLayout(page)
-        layout.addWidget(FeatureDescriptionPanel())
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.addWidget(FeatureDescriptionPanel(), 0, Qt.AlignTop)
         return page
 
     def _device_status_box(self) -> QFrame:
@@ -207,21 +238,16 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         self.status_labels = {}
 
+        self.current_device_section_title = make_step_header("1 当前操作设备")
+        layout.addWidget(self.current_device_section_title)
+
         top = QHBoxLayout()
         heading = QVBoxLayout()
-        self.app_title = QLabel(APP_WINDOW_TITLE)
-        self.app_title.setStyleSheet("font-size: 22px; font-weight: 800; color: #111827;")
-        subtitle = QLabel("先找到设备，再对选中设备执行诊断、投屏、日志或 APK 安装。")
-        subtitle.setWordWrap(True)
-        subtitle.setStyleSheet(MUTED_TEXT_STYLE)
-        self.current_device_name = QLabel("未选择设备")
-        self.current_device_name.setStyleSheet("font-size: 18px; font-weight: 800; color: #111827;")
+        self.current_device_name = QLabel("当前未选择操作设备")
+        self.current_device_name.setStyleSheet("font-size: 16px; font-weight: 500; color: #111827;")
         self.current_device_detail = QLabel("请先连接或扫描设备。")
         self.current_device_detail.setWordWrap(True)
         self.current_device_detail.setStyleSheet(MUTED_TEXT_STYLE)
-        heading.addWidget(self.app_title)
-        heading.addWidget(subtitle)
-        heading.addSpacing(6)
         heading.addWidget(self.current_device_name)
         heading.addWidget(self.current_device_detail)
         self.current_device_state = QLabel("待连接")
@@ -231,24 +257,18 @@ class MainWindow(QMainWindow):
         top.addWidget(self.current_device_state)
         layout.addLayout(top)
 
+        self.quick_actions_section_title = make_step_header("2 常用操作")
+        layout.addWidget(self.quick_actions_section_title)
+
         actions = QHBoxLayout()
-        self.detect_button = QPushButton("检测数据线设备")
-        self.refresh_button = QPushButton("刷新")
-        self.restart_adb_button = QPushButton("重启 ADB")
         self.diagnose_button = QPushButton("一键生成诊断包")
-        self.quick_mirror_button = QPushButton("投屏")
+        self.quick_mirror_button = QPushButton("ADB 投屏")
         self.quick_log_button = QPushButton("日志")
         self.detail_toggle_button = QPushButton("显示工程师详情")
-        style_button(self.detect_button, "secondary", "检测 ADB、设备授权、型号、root、IP 等状态。")
-        style_button(self.refresh_button, "secondary", "重新刷新当前连接设备。")
-        style_button(self.restart_adb_button, "warning", "重启本机 ADB 服务，适合设备 offline 或连接异常时使用。")
-        style_button(self.diagnose_button, "primary", "自动抓取完整诊断日志、截图和报告，并生成 zip。")
-        style_button(self.quick_mirror_button, "secondary", "启动 scrcpy 实时投屏窗口。")
-        style_button(self.quick_log_button, "secondary", "打开独立实时 logcat 窗口。")
-        style_button(self.detail_toggle_button, "secondary", "展开 SDK、root、remount、IP 等工程师详情。")
-        actions.addWidget(self.detect_button)
-        actions.addWidget(self.refresh_button)
-        actions.addWidget(self.restart_adb_button)
+        style_button(self.diagnose_button, "primary", "自动抓取完整诊断日志、截图和报告，并生成 zip。", "package")
+        style_button(self.quick_mirror_button, "success", "对当前选中设备启动 scrcpy 实时投屏窗口。", "mirror")
+        style_button(self.quick_log_button, "secondary", "打开独立实时 logcat 窗口。", "log")
+        style_button(self.detail_toggle_button, "secondary", "展开 SDK、root、remount、IP 等工程师详情。", "list")
         actions.addWidget(self.detail_toggle_button)
         actions.addStretch(1)
         actions.addWidget(self.quick_log_button)
@@ -329,15 +349,12 @@ class MainWindow(QMainWindow):
         title_label.setStyleSheet("color: #5f6b7a; font-size: 12px;")
         value_label = QLabel(value)
         value_label.setWordWrap(True)
-        value_label.setStyleSheet("color: #111827; font-size: 15px; font-weight: 700;")
+        value_label.setStyleSheet("color: #111827; font-size: 14px; font-weight: 500;")
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         return card, value_label
 
     def _connect_signals(self):
-        self.detect_button.clicked.connect(self.detect_device)
-        self.refresh_button.clicked.connect(self.detect_device)
-        self.restart_adb_button.clicked.connect(self.restart_adb)
         self.diagnose_button.clicked.connect(self.start_diagnosis)
         self.quick_mirror_button.clicked.connect(self.start_screen_mirror)
         self.quick_log_button.clicked.connect(self.open_live_log)
@@ -345,7 +362,8 @@ class MainWindow(QMainWindow):
         self.live_log_button.clicked.connect(self.open_live_log)
         self.open_output_button.clicked.connect(lambda: open_in_explorer(self.output_root))
         self.connection_panel.status_button.clicked.connect(self.detect_device)
-        self.connection_panel.tcpip_button.clicked.connect(self.enable_network_debugging)
+        self.connection_panel.usb_refresh_button.clicked.connect(self.detect_device)
+        self.connection_panel.restart_adb_button.clicked.connect(self.restart_adb)
         self.connection_panel.quick_scan_button.clicked.connect(self.scan_current_network)
         self.connection_panel.scan_range_button.clicked.connect(self.scan_configured_range)
         self.connection_panel.save_range_button.clicked.connect(self.save_scan_range)
@@ -359,9 +377,10 @@ class MainWindow(QMainWindow):
         self.connection_panel.remount_button.clicked.disconnect()
         self.connection_panel.remount_button.clicked.connect(self.run_remount)
         self.screenshot_panel.screenshot_button.clicked.connect(self.take_screenshot)
+        self.screenshot_panel.view_screenshot_button.clicked.connect(self.open_latest_screenshot)
+        self.screenshot_panel.preview.clicked.connect(self.open_latest_screenshot)
         self.screenshot_panel.open_screenshot_button.clicked.connect(lambda: open_in_explorer(self.output_root / "screenshots"))
         self.screenshot_panel.record_button.clicked.connect(self.record_screen)
-        self.screenshot_panel.mirror_button.clicked.connect(self.start_screen_mirror)
         self.screenshot_panel.open_record_button.clicked.connect(lambda: open_in_explorer(self.output_root / "screenrecords"))
         self.file_panel.push_button.clicked.connect(self.push_file)
         self.file_panel.pull_button.clicked.connect(self.pull_file)
@@ -382,7 +401,12 @@ class MainWindow(QMainWindow):
         self.apk_install_panel.open_button.clicked.connect(lambda: open_in_explorer(self.output_root / "apk_install"))
 
         self.adb_debug_button = QPushButton("打开 ADB 调试窗口")
-        style_button(self.adb_debug_button, "engineer", "打开 FAE 调试窗口，直接执行 adb/shell 命令。")
+        style_button(
+            self.adb_debug_button,
+            "engineer",
+            "打开 FAE 调试窗口，直接执行 adb/shell 命令。",
+            "terminal",
+        )
         self.adb_debug_button.clicked.connect(self.open_adb_debug_window)
         self.device_box.layout().addWidget(self.adb_debug_button)
 
@@ -392,9 +416,53 @@ class MainWindow(QMainWindow):
     def _set_connection_devices(self, records: list[DeviceRecord]) -> None:
         self.connection_panel.set_devices(records)
         self.apk_install_panel.set_target_devices(records)
+        self._sync_target_action_enabled()
 
     def _sync_apk_targets_from_connection_center(self) -> None:
         self.apk_install_panel.set_target_devices(self.connection_panel.records)
+
+    def _current_connection_record(self) -> DeviceRecord | None:
+        serial = self.connection_panel.selected_serial() or self.adb.serial
+        if not serial:
+            return None
+        return next((item for item in self.connection_panel.records if item.serial == serial), None)
+
+    def _device_label(self, record: DeviceRecord) -> str:
+        return f"{record.display_name()} / {record.serial}"
+
+    def _target_action_buttons(self) -> list[QPushButton]:
+        buttons = [
+            self.diagnose_button,
+            self.quick_mirror_button,
+            self.quick_log_button,
+            self.live_log_button,
+            self.screenshot_panel.screenshot_button,
+            self.screenshot_panel.record_button,
+            self.file_panel.push_button,
+            self.file_panel.pull_button,
+        ]
+        if hasattr(self, "adb_debug_button"):
+            buttons.append(self.adb_debug_button)
+        return buttons
+
+    def _sync_target_action_enabled(self) -> None:
+        if getattr(self, "_busy", False):
+            return
+        record = self._current_connection_record()
+        enabled = bool(record and record.status == "已可调试")
+        for button in self._target_action_buttons():
+            button.setEnabled(enabled)
+
+    def _require_debuggable_target(self, title: str) -> DeviceRecord | None:
+        record = self._current_connection_record()
+        if not record:
+            self.set_result_status(title, "FAILED", "请先在“设备连接”页选择数据线连接、网络连接或网段扫描，并选中一台已可调试设备。")
+            return None
+        if record.status != "已可调试":
+            self.set_result_status(title, "FAILED", f"当前选中设备状态为“{record.status}”，请先完成授权或重新检测后再操作。")
+            return None
+        self.adb.set_serial(record.serial)
+        return record
 
     def toggle_engineer_details(self):
         visible = not self.engineer_detail_frame.isVisible()
@@ -502,7 +570,7 @@ class MainWindow(QMainWindow):
         for device in devices:
             serial = device.get("serial", "")
             state = device.get("state", "unknown")
-            connection = "同一网络连接" if ":" in serial else "数据线连接"
+            connection = "网络 ADB 连接" if ":" in serial else "数据线连接"
             endpoint = serial if ":" in serial else ""
             raw = device.get("raw", "")
             model = self._raw_adb_field(raw, "model")
@@ -557,6 +625,7 @@ class MainWindow(QMainWindow):
         if record.android:
             self._set_status("Android 版本", record.android, "green")
         self.update_current_device_summary(record)
+        self._sync_target_action_enabled()
 
     def start_selected_device_detail_refresh(self, serial: str | None):
         if not serial:
@@ -583,7 +652,7 @@ class MainWindow(QMainWindow):
             "授权状态": adb.quick_run(["get-state"], timeout=5)[1].strip(),
             "root 状态（工程师）": self._root_summary(root_raw),
             "remount 状态（工程师）": "未执行 remount。普通客户无需关注；工程师需要写系统分区时再点 adb remount。",
-            "连接方式": "同一网络连接" if (serial or adb.serial or "").find(":") >= 0 else "数据线连接",
+            "连接方式": "网络 ADB 连接" if (serial or adb.serial or "").find(":") >= 0 else "数据线连接",
             "IP 摘要（网络）": self._ip_summary(ip_raw),
         }
 
@@ -668,7 +737,7 @@ class MainWindow(QMainWindow):
             detail_parts = [record.serial, record.connection]
             if record.android:
                 detail_parts.append(f"Android {record.android}")
-            self.current_device_name.setText(name or "未知设备")
+            self.current_device_name.setText(f"当前操作设备：{name or '未知设备'}")
             self.current_device_state.setText(state)
             self.current_device_detail.setText(" · ".join(part for part in detail_parts if part))
             return
@@ -677,7 +746,7 @@ class MainWindow(QMainWindow):
         android = self.status_labels.get("Android 版本").text() if self.status_labels.get("Android 版本") else ""
         state = self.status_labels.get("连接状态").text() if self.status_labels.get("连接状态") else ""
         connection = self.status_labels.get("连接方式").text() if self.status_labels.get("连接方式") else ""
-        self.current_device_name.setText(model if model and model != "未检测" else "未选择设备")
+        self.current_device_name.setText(f"当前操作设备：{model}" if model and model != "未检测" else "当前未选择操作设备")
         self.current_device_state.setText("已可调试" if state == "device" else (state or "待连接"))
         detail = " · ".join(part for part in [serial, connection, f"Android {android}" if android and android != "未检测" else ""] if part and part != "未检测")
         self.current_device_detail.setText(detail or "请先连接或扫描设备。")
@@ -741,11 +810,11 @@ class MainWindow(QMainWindow):
         self.detect_device()
 
     def enable_network_debugging(self):
-        port = self.connection_panel.port.text().strip() or DEFAULT_NETWORK_ADB_PORT
-        if not port.isdigit() or not 1 <= int(port) <= 65535:
-            self.set_result_status("输入错误", "FAILED", "端口范围必须是 1~65535。")
-            return
-        self.run_simple_adb(["tcpip", port], "开启同一网络调试")
+        self.set_result_status(
+            "功能已调整",
+            "FAILED",
+            "本阶段已取消单独的网络调试端口入口。请在“设备连接”页使用“数据线连接”确认 USB 授权；需要网络连接时使用“网络连接”或“网段扫描”。",
+        )
 
     def save_scan_range(self):
         ok, message, scan_range = self.connection_panel.scan_range_values()
@@ -758,7 +827,7 @@ class MainWindow(QMainWindow):
         self.connection_panel.set_scan_status(f"已保存常用网段：{scan_range.label()}", "green")
 
     def scan_current_network(self):
-        port = self.connection_panel.scan_port.text().strip() or self.connection_panel.port.text().strip() or DEFAULT_NETWORK_ADB_PORT
+        port = self.connection_panel.scan_port.text().strip() or self.connection_panel.connect_port.text().strip() or DEFAULT_NETWORK_ADB_PORT
         ranges = suggested_current_network_ranges(port)
         if not ranges:
             self.connection_panel.set_scan_status("未识别到当前电脑的有效 IPv4 网段，请手动填写 IP 范围。", "red")
@@ -779,7 +848,7 @@ class MainWindow(QMainWindow):
         self.start_network_scan(scan_range)
 
     def start_network_scan(self, scan_range: NetworkRange):
-        self.set_running_status(f"正在扫描同一网络设备：{scan_range.label()}")
+        self.set_running_status(f"正在执行网段扫描：{scan_range.label()}")
         self.connection_panel.set_scan_status(f"正在扫描 {scan_range.label()}，可继续查看进度提示。", "yellow")
 
         def work():
@@ -815,13 +884,13 @@ class MainWindow(QMainWindow):
             self.adb.set_serial(verified[0].serial)
             self._select_connection_row(verified[0].serial)
             self.connection_panel.set_scan_status(f"扫描完成：已确认 {len(verified)} 台可调试设备。", "green")
-            self.set_direct_result_status("扫描完成", True, f"已确认 {len(verified)} 台同一网络设备可调试。", "请选择设备后执行投屏、日志、APK 安装或诊断。")
+            self.set_direct_result_status("网段扫描完成", True, f"已确认 {len(verified)} 台网络 ADB 设备可调试。", "请选择设备后执行投屏、日志、APK 安装或诊断。")
         elif candidates:
             self.connection_panel.set_scan_status(f"扫描完成：发现 {len(candidates)} 个候选地址，但未确认可调试。", "yellow")
-            self.set_direct_result_status("扫描完成", False, "发现候选地址，但未确认可调试。", "请确认设备已开启同一网络调试端口，并在设备屏幕允许 USB 调试。")
+            self.set_direct_result_status("网段扫描完成", False, "发现候选地址，但未确认可调试。", "请确认设备网络 ADB 端口可访问，并在设备屏幕允许 USB 调试。")
         else:
             self.connection_panel.set_scan_status("扫描完成：未发现可连接设备。", "red")
-            self.set_direct_result_status("扫描完成", False, "未发现可连接设备。", "请确认设备和电脑在同一网络，或先用数据线开启同一网络调试。")
+            self.set_direct_result_status("网段扫描完成", False, "未发现可连接设备。", "请确认设备和电脑在同一局域网，或使用无线配对后再连接。")
 
     def connect_remote(self):
         ip, port = self.connection_panel.endpoint()
@@ -829,7 +898,7 @@ class MainWindow(QMainWindow):
         if not ok:
             self.set_result_status("输入错误", "FAILED", message)
             return
-        self.run_simple_adb(["connect", f"{ip}:{port}"], "连接同一网络设备")
+        self.run_simple_adb(["connect", f"{ip}:{port}"], "连接网络 ADB 设备")
 
     def disconnect_remote(self):
         ip, port = self.connection_panel.endpoint()
@@ -843,11 +912,14 @@ class MainWindow(QMainWindow):
             selected = self.connection_panel.selected_serial()
             if selected and ":" in selected:
                 args = ["disconnect", selected]
+            elif selected:
+                self.set_result_status("无法断开数据线设备", "FAILED", "数据线设备不能通过 adb disconnect 断开；请拔掉数据线、关闭 USB 调试或在设备上撤销授权。")
+                return
             else:
-                if QMessageBox.question(self, "确认断开", "未填写 IP 且未选择同一网络设备，是否断开全部同一网络连接？") != QMessageBox.Yes:
+                if QMessageBox.question(self, "确认断开", "未填写 IP 且未选择网络 ADB 设备，是否断开全部网络 ADB 连接？") != QMessageBox.Yes:
                     return
                 args = ["disconnect"]
-        self.run_simple_adb(args, "断开同一网络设备")
+        self.run_simple_adb(args, "断开网络 ADB 设备")
 
     def pair_remote(self):
         ip, port, code = self.connection_panel.pair_endpoint()
@@ -858,10 +930,13 @@ class MainWindow(QMainWindow):
         self.run_simple_adb(["pair", f"{ip}:{port}", code], "ADB 远程配对")
 
     def start_diagnosis(self):
+        record = self._require_debuggable_target("无法生成诊断包")
+        if not record:
+            return
         dialog = CustomerInfoDialog(self)
         if not dialog.exec():
             return
-        self.set_running_status("正在生成诊断包，请勿拔掉设备。")
+        self.set_running_status(f"正在为 {self._device_label(record)} 生成诊断包，请勿拔掉设备。")
         collector = LogCollector(self.adb, self.root)
 
         def progress(current, total, message):
@@ -1095,7 +1170,7 @@ class MainWindow(QMainWindow):
         options = self.apk_install_panel.options()
         stop_on_failure = self.apk_install_panel.stop_on_failure_check.isChecked()
         total = len(apk_infos) * len(targets)
-        self.apk_install_panel.set_running(f"正在执行安装任务：共 {total} 项，请勿拔掉数据线或关闭同一网络调试...")
+        self.apk_install_panel.set_running(f"正在执行安装任务：共 {total} 项，请勿拔掉数据线或断开网络 ADB 连接...")
 
         def work():
             summary = ApkInstallPlanQueue(self.adb, self.output_root).install_all(
@@ -1194,7 +1269,7 @@ class MainWindow(QMainWindow):
             return
         options = self.apk_install_panel.options()
         stop_on_failure = self.apk_install_panel.stop_on_failure_check.isChecked()
-        self.apk_install_panel.set_running(f"正在安装到 {len(targets)} 台设备，请勿拔掉数据线或关闭同一网络调试...")
+        self.apk_install_panel.set_running(f"正在安装到 {len(targets)} 台设备，请勿拔掉数据线或断开网络 ADB 连接...")
 
         def work():
             summary = TargetDeviceApkInstallQueue(self.adb, self.output_root).install_to_targets(
@@ -1382,18 +1457,17 @@ class MainWindow(QMainWindow):
         self.set_result_status("任务失败", "FAILED", message)
 
     def _set_busy(self, busy: bool):
+        self._busy = busy
         buttons = [
             self.diagnose_button,
             self.quick_mirror_button,
             self.quick_log_button,
             self.detail_toggle_button,
-            self.detect_button,
-            self.refresh_button,
-            self.restart_adb_button,
             self.live_log_button,
             self.open_output_button,
             self.connection_panel.status_button,
-            self.connection_panel.tcpip_button,
+            self.connection_panel.usb_refresh_button,
+            self.connection_panel.restart_adb_button,
             self.connection_panel.quick_scan_button,
             self.connection_panel.scan_range_button,
             self.connection_panel.save_range_button,
@@ -1404,7 +1478,7 @@ class MainWindow(QMainWindow):
             self.connection_panel.remount_button,
             self.screenshot_panel.screenshot_button,
             self.screenshot_panel.record_button,
-            self.screenshot_panel.mirror_button,
+            self.screenshot_panel.view_screenshot_button,
             self.screenshot_panel.open_screenshot_button,
             self.screenshot_panel.open_record_button,
             self.file_panel.push_button,
@@ -1427,34 +1501,57 @@ class MainWindow(QMainWindow):
             self.apk_install_panel.retry_failed_button,
             self.apk_install_panel.export_result_button,
         ]
+        if hasattr(self, "adb_debug_button"):
+            buttons.append(self.adb_debug_button)
         for button in buttons:
             button.setEnabled(not busy)
+        if not busy:
+            self.screenshot_panel.set_screenshot_path(self.screenshot_panel.current_screenshot_path)
         self.apk_install_panel.install_button.setEnabled(not busy and self.apk_install_panel.current_apk is not None)
         self.apk_install_panel.start_batch_button.setEnabled(not busy and bool(self.apk_install_panel.apk_queue))
         self.apk_install_panel.retry_failed_button.setEnabled(not busy and bool(self.apk_install_panel.failed_queue))
         self.apk_install_panel.export_result_button.setEnabled(not busy and bool(self.apk_install_panel.apk_queue))
         if not busy:
             self.apk_install_panel._update_target_buttons()
+            self._sync_target_action_enabled()
 
     def open_live_log(self):
-        if not self.live_log_window:
-            self.live_log_window = LiveLogWindow(self.adb, self.output_root)
+        record = self._require_debuggable_target("无法打开实时日志")
+        if not record:
+            return
+        window = self.live_log_windows.get(record.serial)
+        if window is None:
+            window = LiveLogWindow(AdbManager(self.root, serial=record.serial), self.output_root, self._device_label(record))
+            self.live_log_windows[record.serial] = window
+        self.live_log_window = window
         self.live_log_window.show()
         self.live_log_window.raise_()
 
     def open_adb_debug_window(self):
-        if not self.adb_debug_window:
-            self.adb_debug_window = AdbDebugWindow(self.adb, self.root)
-        self.adb_debug_window.show()
-        self.adb_debug_window.raise_()
+        record = self._require_debuggable_target("无法打开 ADB 调试窗口")
+        if not record:
+            return
+        device_label = self._device_label(record)
+        window = self.adb_debug_windows.get(record.serial)
+        if window is None:
+            window = AdbDebugWindow(AdbManager(self.root, serial=record.serial), self.root, device_label)
+            self.adb_debug_windows[record.serial] = window
+        window.show()
+        window.raise_()
 
     def start_screen_mirror(self):
+        record = self._require_debuggable_target("无法启动 ADB 投屏")
+        if not record:
+            return
         result = start_screen_mirror(self.root, self.adb.serial)
-        self.set_direct_result_status("ADB 投屏", result.success, result.message, result.solution)
+        self.set_direct_result_status("ADB 投屏", result.success, f"目标设备：{self._device_label(record)}\n{result.message}", result.solution)
 
     def take_screenshot(self):
-        self.set_running_status("正在运行：截屏 adb exec-out screencap -p")
-        self.screenshot_panel.set_running("正在截屏：优先使用 exec-out，失败会自动改用设备端截图后拉取。")
+        record = self._require_debuggable_target("无法截屏")
+        if not record:
+            return
+        self.set_running_status(f"正在为 {self._device_label(record)} 截屏：adb exec-out screencap -p")
+        self.screenshot_panel.set_running(f"目标设备：{self._device_label(record)}\n正在截屏：优先使用 exec-out，失败会自动改用设备端截图后拉取。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1471,6 +1568,7 @@ class MainWindow(QMainWindow):
             pix = QPixmap(str(path))
             if pix.isNull():
                 self.screenshot_panel.preview.clear()
+                self.screenshot_panel.set_screenshot_path(None)
                 self.screenshot_panel.set_result(False, "截图失败：生成的文件不是有效图片，请查看运行日志。")
                 self.set_result_status("截屏失败", "FAILED", "生成的截图文件无法打开，已判定为无效图片。")
                 return
@@ -1478,17 +1576,29 @@ class MainWindow(QMainWindow):
             self.screenshot_panel.preview.setPixmap(
                 pix.scaled(preview_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
+            self.screenshot_panel.set_screenshot_path(Path(path))
             self.screenshot_panel.set_result(True, f"截图成功：{path}")
             self.set_result_status("截屏成功", "SUCCESS", path=path)
         else:
             self.screenshot_panel.preview.clear()
+            self.screenshot_panel.set_screenshot_path(None)
             self.screenshot_panel.set_result(False, "截图失败：未生成有效 PNG 文件。")
             self.set_result_status("截屏失败", "FAILED", "设备未连接、未授权、不支持截屏命令，或 ADB 返回了损坏图片。")
 
+    def open_latest_screenshot(self):
+        path = self.screenshot_panel.current_screenshot_path
+        if not path or not path.exists():
+            self.screenshot_panel.set_result(False, "当前没有可打开的截图，请先点击“截屏”。")
+            return
+        open_file_default(path)
+
     def record_screen(self):
+        record = self._require_debuggable_target("无法录屏")
+        if not record:
+            return
         seconds = self.screenshot_panel.record_seconds.value()
-        self.set_running_status(f"正在运行：录制屏幕 {seconds} 秒，请勿拔掉设备。")
-        self.screenshot_panel.set_running(f"正在录屏：预计 {seconds} 秒，完成后会自动拉取到本地。")
+        self.set_running_status(f"正在为 {self._device_label(record)} 录制屏幕 {seconds} 秒，请勿拔掉设备。")
+        self.screenshot_panel.set_running(f"目标设备：{self._device_label(record)}\n正在录屏：预计 {seconds} 秒，完成后会自动拉取到本地。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1509,9 +1619,12 @@ class MainWindow(QMainWindow):
             self.set_result_status("录屏失败", "UNSUPPORTED", "设备可能不支持 screenrecord，或当前连接/权限不足。")
 
     def push_file(self):
+        record = self._require_debuggable_target("无法推送文件")
+        if not record:
+            return
         local, target = self.file_panel.push_values()
         self.set_running_status(f"正在运行：adb push {local} {target}")
-        self.file_panel.set_running(f"正在推送文件：{local}\n目标：{target}\n大文件或系统目录可能耗时较长，请等待结果。")
+        self.file_panel.set_running(f"目标设备：{self._device_label(record)}\n正在推送文件：{local}\n目标：{target}\n大文件或系统目录可能耗时较长，请等待结果。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1523,13 +1636,16 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def pull_file(self):
+        record = self._require_debuggable_target("无法拉取文件")
+        if not record:
+            return
         device_path, local_dir = self.file_panel.pull_values()
         if not device_path:
             self.file_panel.set_result(False, "设备路径不能为空。")
             self.set_result_status("输入错误", "FAILED", "设备路径不能为空。")
             return
         self.set_running_status(f"正在运行：adb pull {device_path} {local_dir}")
-        self.file_panel.set_running(f"正在拉取文件：{device_path}\n保存目录：{local_dir}\n请等待传输完成。")
+        self.file_panel.set_running(f"目标设备：{self._device_label(record)}\n正在拉取文件：{device_path}\n保存目录：{local_dir}\n请等待传输完成。")
 
         def work():
             runner = CommandRunner(self.output_root / "command_status.json")
@@ -1549,6 +1665,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.live_log_window:
             self.live_log_window.stop()
+        for window in self.live_log_windows.values():
+            window.close()
+        for window in self.adb_debug_windows.values():
+            window.close()
         if self.single_live_worker:
             self.single_live_worker.requestInterruption()
             self.single_live_worker.stop()

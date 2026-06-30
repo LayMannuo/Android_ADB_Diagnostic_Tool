@@ -1,61 +1,108 @@
-from PySide6.QtWidgets import QFrame, QLabel, QTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
 
-from app.gui.styles import CARD_TITLE_STYLE, style_card
+from app.gui.styles import CARD_TITLE_STYLE, MUTED_TEXT_STYLE, PANEL_HINT_STYLE, make_step_header, style_card
 
 
 class FeatureDescriptionPanel(QFrame):
     def __init__(self):
         super().__init__()
         style_card(self)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        title = QLabel("功能说明与页面布局")
+        layout.setSpacing(12)
+
+        title = QLabel("功能说明")
         title.setStyleSheet(CARD_TITLE_STYLE)
+        subtitle = QLabel("给客户和 FAE 的操作说明、状态解释和交付边界。")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(MUTED_TEXT_STYLE)
         layout.addWidget(title)
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setPlainText(
-            "\n".join(
-                [
-                    "页面 1：快速诊断",
-                    "  适合谁：普通客户和 FAE 都从这里开始。",
-                    "  怎么用：先看顶部当前设备栏；未选择设备时先点“检测数据线设备”或“扫描当前网络”，确认“已可调试”后再执行诊断、投屏、日志或 APK 安装。",
-                    "  页面结构：顶部是当前设备和主操作，中间是设备列表和连接方式，底部是截图、录屏、文件传输和运行日志。",
-                    "  交互说明：检测会先快速列出设备，不会因多台设备逐个读取属性而卡住界面；选中设备的型号、系统版本和 IP 摘要会在后台补全。",
-                    "  一键生成诊断包包含：62 项 ADB 采集命令、自动截图、summary_report.html 报告、command_status.json 执行明细、tool_runtime_log.txt 工具日志，最后压缩为 zip。",
-                    "  采集范围：设备信息 12 项、logcat/dmesg 7 项、bugreport 1 项、dumpsys 16 项、crash/ANR 3 项、网络 10 项、4G/蜂窝 5 项、应用/进程 3 项、proc/system 5 项。",
-                    "  失败策略：单条命令失败、权限不足、不支持或超时都会记录到报告和状态文件，流程继续执行；bugreport 可能耗时较长，卡在该项时优先等待。",
-                    "  重点看：绿色代表成功；红色代表失败，红色区域会告诉原因和解决办法。",
-                    "  设备连接中心：设备列表优先显示；连接方式按数据线、同一网络、无线配对、高级分段展示。端口默认 5566，可按现场配置修改。",
-                    "  工程师项：root、remount、无线调试配对、ADB 调试窗口主要给 FAE 使用；量产设备不支持时属于系统限制。",
-                    "",
-                    "页面 2：单项日志 / 问题分析",
-                    "  适合谁：FAE 现场快速定位问题，也适合客户按工程师要求抓指定日志。",
-                    "  怎么用：选择日志类型后，看“当前能力”；已复现点“导出已缓存日志”，现场复现点“开始持续抓取（含缓存）”，复现后点“停止抓取并分析”。",
-                    "  重点看：定位结论、关键字统计、证据和下一步建议。实时预览只显示最近 1000 行，完整日志仍全量保存到文件。",
-                    "",
-                    "页面 3：APK 安装",
-                    "  适合谁：客户安装测试包，FAE 验证现场 APK 版本和安装结果。",
-                    "  怎么用：拖拽或选择一个或多个 APK，确认包名/版本/MD5；在目标设备表勾选一台或多台“已可调试”设备后点“开始安装”。",
-                    "  目标设备：来自快速诊断页的设备连接中心；检测数据线设备或扫描同一网络后会自动同步，默认勾选已可调试设备。",
-                    "  执行规则：一个 APK 或多个 APK、一个设备或多个设备都走同一个开始安装按钮；任务会按待安装 APK 和目标设备串行执行。",
-                    "  重点看：目标设备表会显示每台设备的安装结果；待安装 APK 表格会显示每个 APK 的状态。标准 APK 会显示标准状态；1.apk(1).1 这类异常文件名会自动规范化。安装成功后会二次确认包名存在，再删除临时 APK。",
-                    "",
-                    "页面 4：功能说明与页面布局",
-                    "  - 面向客户：告诉客户先点什么、哪里看结果、哪些失败可以忽略。",
-                    "  - 面向 FAE：说明哪些按钮是工程师调试能力，哪些日志适合分析哪类问题。",
-                    "",
-                    "颜色规则",
-                    "  - 绿色：成功或状态正常。",
-                    "  - 黄色：正在运行、需要等待或需要客户确认。",
-                    "  - 红色：失败、风险操作或需要处理的问题；界面会显示原因和解决建议。",
-                    "",
-                    "交付说明",
-                    "  - 最终交付为单个 exe，内置 ADB，客户不需要安装 Python。",
-                    "  - 所有耗时 ADB 操作都在后台执行，不弹黑色 CMD 窗口，不阻塞界面。",
-                    "  - 同一网络扫描会先探测端口，再用 ADB 验证；只有确认可执行调试命令，才显示“已可调试”。",
-                    "  - 投屏组件已内置在 exe 包内；如现场失败，优先检查设备授权、驱动、亮屏和 USB/网络连接。",
-                ]
-            )
+        layout.addWidget(subtitle)
+
+        flow_title = make_step_header("1 推荐使用流程")
+        layout.addWidget(flow_title)
+        flow = QHBoxLayout()
+        self.flow_cards = []
+        for name, body in [
+            ("连接设备", "在设备连接页选择数据线连接、网络连接或网段扫描。"),
+            ("确认已可调试", "只有已可调试设备才能投屏、抓日志、安装 APK 或生成诊断包。"),
+            ("执行操作", "按现场问题进入快速诊断、单项日志、APK 安装或辅助工具。"),
+            ("导出结果", "把诊断包、日志、截图、安装结果发给工程师分析。"),
+        ]:
+            card = self._info_card(name, body)
+            self.flow_cards.append(card)
+            flow.addWidget(card)
+        layout.addLayout(flow)
+
+        pages_title = make_step_header("2 页面说明")
+        layout.addWidget(pages_title)
+        pages = QGridLayout()
+        page_items = [
+            ("设备连接", "数据线连接、网络连接、网段扫描。确认设备已可调试。"),
+            ("快速诊断", "一键生成诊断包，适合客户交付现场信息。包含 62 项 ADB 采集命令、自动截图、summary_report.html 报告、command_status.json 执行明细，并压缩为 zip。"),
+            ("单项日志", "按问题类型抓指定日志，并自动分析关键字。采集范围包括 logcat/dmesg 7 项。"),
+            ("APK 安装", "添加 APK，勾选设备，一次开始安装。目标设备表显示每台设备的安装结果。"),
+            ("辅助工具", "截图、录屏、文件传输、ADB 调试窗口。耗时操作后台执行，不阻塞界面。"),
+            ("诊断范围", "设备信息 12 项、bugreport 1 项、dumpsys 16 项、网络 10 项；单条命令失败时流程继续执行。"),
+        ]
+        for index, (name, body) in enumerate(page_items):
+            pages.addWidget(self._info_card(name, body), index // 2, index % 2)
+        layout.addLayout(pages)
+
+        rules_title = make_step_header("3 状态与颜色规则")
+        layout.addWidget(rules_title)
+        rules = QGridLayout()
+        for index, (name, body, color) in enumerate(
+            [
+                ("已可调试 / 成功", "可继续操作。", "#0f7a3b"),
+                ("运行中 / 等待", "请勿断开设备。", "#9a4d00"),
+                ("失败", "查看原因和解决建议。", "#b3261e"),
+                ("候选设备", "扫描发现但未确认 ADB 可用。", "#1d4ed8"),
+            ]
+        ):
+            label = QLabel(f"{name}：{body}")
+            label.setWordWrap(True)
+            label.setStyleSheet(f"font-weight: 500; color: {color}; background: #f8fafc; padding: 9px; border: 1px solid #dde5ef; border-radius: 6px;")
+            rules.addWidget(label, index // 2, index % 2)
+        layout.addLayout(rules)
+
+        delivery_title = make_step_header("4 交付说明")
+        layout.addWidget(delivery_title)
+        bottom = QHBoxLayout()
+        bottom.addWidget(
+            self._info_card(
+                "交付边界",
+                "最终交付为单个 exe，内置 ADB 和投屏组件。root / remount 属于工程师操作，量产设备不支持通常是系统限制。",
+            ),
+            2,
         )
-        layout.addWidget(text)
+        bottom.addWidget(
+            self._info_card(
+                "常见问题",
+                "设备未授权：请在设备屏幕确认 USB 调试授权。\n网络设备只显示候选：端口响应但 ADB 未验证成功。\n截图损坏：工具会校验 PNG，并失败时切换备用截图方式。",
+            ),
+            3,
+        )
+        layout.addLayout(bottom)
+
+        note = QLabel("失败策略：权限不足、不支持或超时都会记录到报告和状态文件；bugreport 可能耗时较长，卡在该项时优先等待。")
+        note.setWordWrap(True)
+        note.setStyleSheet(PANEL_HINT_STYLE)
+        layout.addWidget(note)
+
+    @staticmethod
+    def _info_card(title: str, body: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("infoCard")
+        card.setStyleSheet("QFrame#infoCard { background: #ffffff; border: 1px solid #dfe6f0; border-radius: 8px; }")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: 500; color: #1f2937;")
+        body_label = QLabel(body)
+        body_label.setWordWrap(True)
+        body_label.setStyleSheet(MUTED_TEXT_STYLE)
+        layout.addWidget(title_label)
+        layout.addWidget(body_label)
+        return card

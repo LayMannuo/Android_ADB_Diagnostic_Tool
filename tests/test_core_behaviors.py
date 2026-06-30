@@ -1,13 +1,15 @@
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
 
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
-from PySide6.QtWidgets import QGroupBox
+from PySide6.QtWidgets import QFrame, QGroupBox, QLabel, QPushButton
 
 from app.core.adb_manager import AdbManager
 from app.core.command_runner import CommandResult, CommandRunner
@@ -39,6 +41,7 @@ from app.core.ui_text import RECORD_BUTTON_TEXT
 from app.gui import main_window as main_window_module
 from app.gui.apk_install_panel import ApkInstallPanel
 from app.gui.live_log_window import LiveLogWorker
+from app.gui.styles import app_icon, configure_application_font, style_button
 
 
 class CoreBehaviorTests(unittest.TestCase):
@@ -53,6 +56,23 @@ class CoreBehaviorTests(unittest.TestCase):
 
     def test_safe_text_replaces_invalid_bytes(self):
         self.assertEqual(safe_text(b"ok\xfftext"), "ok\ufffdtext")
+
+    def test_configure_application_font_returns_active_family(self):
+        self.assertTrue(configure_application_font(self._qt_app))
+        self.assertLessEqual(self._qt_app.font().pointSize(), 9)
+        self.assertEqual(self._qt_app.property("fontRendering"), "antialias")
+        self.assertTrue(self._qt_app.font().styleStrategy() & QFont.PreferAntialias)
+
+    def test_app_icons_are_custom_vector_icons_and_can_style_buttons(self):
+        icon = app_icon("device")
+        button = QPushButton("Demo")
+
+        style_button(button, "primary", icon="device")
+
+        self.assertFalse(icon.isNull())
+        self.assertFalse(button.icon().isNull())
+        self.assertEqual(button.property("appIcon"), "device")
+        self.assertGreaterEqual(button.iconSize().width(), 17)
 
     def test_adb_manager_builds_serial_command_with_configured_adb(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -532,19 +552,44 @@ class CoreBehaviorTests(unittest.TestCase):
     def test_apk_panel_exposes_three_step_flow(self):
         panel = ApkInstallPanel()
 
+        step_headers = [
+            child.property("plainText")
+            for child in panel.findChildren(QFrame)
+            if child.objectName() == "stepHeader"
+        ]
         label_texts = [child.text() for child in panel.findChildren(type(panel.drop_hint)) if hasattr(child, "text")]
         joined = "\n".join(label_texts)
-        self.assertIn("1 选择 APK", joined)
-        self.assertIn("2 选择安装目标", joined)
-        self.assertIn("3 确认 APK 信息与安装选项", joined)
-        self.assertIn("待安装 APK", joined)
-        self.assertIn("4 安装结果", joined)
+        self.assertIn("1 安装准备", step_headers)
+        self.assertIn("2 选择 APK", step_headers)
+        self.assertIn("3 选择安装目标", step_headers)
+        self.assertIn("4 待安装 APK", step_headers)
+        self.assertIn("5 确认 APK 信息与安装选项", step_headers)
+        self.assertIn("6 安装结果", step_headers)
+        self.assertIn("拖拽 APK", joined)
+
+    def test_apk_panel_has_preparation_bar_and_single_add_entry(self):
+        panel = ApkInstallPanel()
+
+        self.assertTrue(hasattr(panel, "install_readiness_frame"))
+        self.assertEqual(panel.choose_button.text(), "添加 APK")
+        self.assertTrue(panel.choose_many_button.isHidden())
+        self.assertEqual(panel.start_install_button.text(), "开始安装")
+        self.assertIn("未选择 APK", panel.apk_count_value.text())
+        self.assertIn("未选择设备", panel.target_count_value.text())
+        self.assertIn("未就绪", panel.ready_state_value.text())
+
+    def test_apk_panel_uses_roomier_tables_and_output_area(self):
+        panel = ApkInstallPanel()
+
+        self.assertGreaterEqual(panel.target_device_table.minimumHeight(), 160)
+        self.assertGreaterEqual(panel.queue_table.minimumHeight(), 170)
+        self.assertGreaterEqual(panel.output.minimumHeight(), 170)
 
     def test_apk_panel_defaults_debuggable_devices_as_install_targets(self):
         panel = ApkInstallPanel()
         records = [
             DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", model="AIoT3568", android="11"),
-            DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="同一网络连接", model="DS950", android="14"),
+            DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="网络 ADB 连接", model="DS950", android="14"),
             DeviceRecord(serial="USB999", status="未授权", connection="数据线连接", model="Locked", android="11"),
         ]
 
@@ -579,19 +624,21 @@ class CoreBehaviorTests(unittest.TestCase):
             panel.set_apk_info(first_info)
             self.assertTrue(panel.start_install_button.isEnabled())
             self.assertEqual(panel.start_install_button.text(), "开始安装")
+            self.assertIn("APK 1 个", panel.apk_count_value.text())
+            self.assertIn("已选设备 1 台", panel.target_count_value.text())
+            self.assertIn("可开始安装", panel.ready_state_value.text())
             panel.add_apk_info(second_info)
 
             self.assertTrue(panel.start_install_button.isEnabled())
             self.assertEqual(panel.start_install_button.text(), "开始安装")
             self.assertEqual(panel.queue_table.rowCount(), 2)
+            self.assertIn("APK 2 个", panel.apk_count_value.text())
 
     def test_feature_description_documents_one_click_diagnostic_scope(self):
-        from PySide6.QtWidgets import QTextEdit
-
         from app.gui.feature_description_panel import FeatureDescriptionPanel
 
         panel = FeatureDescriptionPanel()
-        description = "\n".join(child.toPlainText() for child in panel.findChildren(QTextEdit))
+        description = "\n".join(child.text() for child in panel.findChildren(QLabel))
 
         self.assertIn("62 项 ADB 采集命令", description)
         self.assertIn("设备信息 12 项", description)
@@ -604,6 +651,27 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertIn("command_status.json", description)
         self.assertIn("压缩为 zip", description)
         self.assertIn("流程继续执行", description)
+
+    def test_feature_description_uses_scannable_cards_not_single_text_block(self):
+        from PySide6.QtWidgets import QTextEdit
+
+        from app.gui.feature_description_panel import FeatureDescriptionPanel
+
+        panel = FeatureDescriptionPanel()
+        text = "\n".join(child.text() for child in panel.findChildren(QLabel))
+
+        self.assertEqual(panel.findChildren(QTextEdit), [])
+        self.assertTrue(hasattr(panel, "flow_cards"))
+        step_headers = [
+            child.property("plainText")
+            for child in panel.findChildren(QFrame)
+            if child.objectName() == "stepHeader"
+        ]
+        self.assertIn("1 推荐使用流程", step_headers)
+        self.assertIn("2 页面说明", step_headers)
+        self.assertIn("3 状态与颜色规则", step_headers)
+        self.assertIn("4 交付说明", step_headers)
+        self.assertIn("连接设备", text)
 
     def test_single_log_panel_exposes_capability_summary(self):
         from app.gui.single_log_panel import SingleLogPanel
@@ -624,6 +692,15 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertIn("高级", panel.clear_device_log_button.text())
         self.assertFalse(panel.stop_live_button.isEnabled())
         self.assertIn("默认保留设备已缓存日志", panel.result.text())
+
+    def test_single_log_panel_separates_primary_and_advanced_actions(self):
+        from app.gui.single_log_panel import SingleLogPanel
+
+        panel = SingleLogPanel()
+
+        self.assertTrue(hasattr(panel, "primary_actions_row"))
+        self.assertTrue(hasattr(panel, "utility_actions_row"))
+        self.assertNotIn("#b3261e", panel.clear_device_log_button.styleSheet())
 
     def test_single_log_live_preview_keeps_recent_lines_only(self):
         from app.gui.single_log_panel import SingleLogPanel
@@ -859,7 +936,7 @@ class CoreBehaviorTests(unittest.TestCase):
             info = ApkInfo(**{**info.__dict__, "package_name": "com.demo.app"})
             targets = [
                 DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接"),
-                DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="同一网络连接"),
+                DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="网络 ADB 连接"),
             ]
             adb = FakeAdb()
 
@@ -934,7 +1011,7 @@ class CoreBehaviorTests(unittest.TestCase):
                 infos.append(ApkInfo(**{**info.__dict__, "package_name": package_name}))
             targets = [
                 DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接"),
-                DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="同一网络连接"),
+                DeviceRecord(serial="192.168.1.70:5566", status="已可调试", connection="网络 ADB 连接"),
             ]
             adb = FakeAdb()
 
@@ -1192,7 +1269,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         result = scanner.probe_endpoint("192.168.28.21", "5566")
 
-        self.assertEqual(result.status, "发现候选设备")
+        self.assertEqual(result.status, "候选设备")
         self.assertIn("端口已响应", result.message)
         self.assertFalse(result.adb_verified)
 
@@ -1202,13 +1279,28 @@ class CoreBehaviorTests(unittest.TestCase):
 
         panel = ConnectionPanel()
 
-        self.assertEqual(panel.port.text(), DEFAULT_NETWORK_ADB_PORT)
+        self.assertEqual(panel.status_button.text(), "检测数据线设备")
+        self.assertEqual(panel.usb_refresh_button.text(), "刷新")
+        self.assertEqual(panel.restart_adb_button.text(), "重启 ADB")
+        self.assertEqual(panel.connect_port.text(), DEFAULT_NETWORK_ADB_PORT)
         self.assertEqual(panel.scan_port.text(), DEFAULT_NETWORK_ADB_PORT)
         self.assertIn("设备连接中心", panel.title())
-        self.assertEqual(panel.quick_scan_button.text(), "扫描当前网络")
+        self.assertEqual(panel.quick_scan_button.text(), "扫描当前网段")
         self.assertEqual(panel.scan_range_button.text(), "扫描指定范围")
         self.assertEqual(panel.device_table.columnCount(), 6)
-        self.assertIn("同一网络", panel.note.toPlainText())
+        self.assertIn("数据线连接", panel.note.text())
+        self.assertIn("网络连接", panel.note.text())
+        self.assertIn("网段扫描", panel.note.text())
+
+    def test_connection_panel_uses_three_clear_connection_methods(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+
+        self.assertFalse(hasattr(panel, "tcpip_button"))
+        self.assertFalse(hasattr(panel, "port"))
+        self.assertEqual([panel.mode_tabs.tabText(index) for index in range(panel.mode_tabs.count())], ["数据线连接", "网络连接", "网段扫描"])
+        self.assertTrue(any("无线配对" in label.text() for label in panel.mode_tabs.widget(1).findChildren(QLabel)))
 
     def test_connection_panel_prioritizes_device_list_and_segmented_connection_modes(self):
         from app.gui.connection_panel import ConnectionPanel
@@ -1217,11 +1309,52 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertNotIsInstance(panel, QGroupBox)
         self.assertGreaterEqual(panel.device_table.minimumHeight(), 150)
-        self.assertEqual(panel.mode_tabs.count(), 4)
-        self.assertEqual([panel.mode_tabs.tabText(index) for index in range(panel.mode_tabs.count())], ["数据线", "同一网络", "无线配对", "高级"])
-        self.assertLess(panel.layout().indexOf(panel.device_list_frame), panel.layout().indexOf(panel.mode_tabs))
-        self.assertFalse(panel.root_button.isVisible())
+        self.assertEqual(panel.mode_tabs.count(), 3)
+        self.assertEqual([panel.mode_tabs.tabText(index) for index in range(panel.mode_tabs.count())], ["数据线连接", "网络连接", "网段扫描"])
+        self.assertLess(panel.layout().indexOf(panel.mode_tabs), panel.layout().indexOf(panel.device_list_frame))
+        self.assertGreater(panel.layout().indexOf(panel.engineer_tools_frame), panel.layout().indexOf(panel.device_list_frame))
         self.assertIn("当前没有设备", panel.empty_device_hint.text())
+
+    def test_connection_panel_uses_numbered_workflow_and_compact_device_legend(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+
+        self.assertEqual(panel.method_title.property("plainText"), "1 选择连接方式")
+        self.assertEqual(panel.device_list_title.property("plainText"), "2 设备列表")
+        self.assertEqual(panel.method_title.objectName(), "stepHeader")
+        self.assertTrue(hasattr(panel, "device_summary_labels"))
+        self.assertTrue(hasattr(panel, "status_legend"))
+        self.assertLessEqual(len(panel.scope_hint.text()), 80)
+        self.assertIn("已可调试=可操作", panel.status_legend.text())
+
+    def test_connection_panel_uses_one_connection_selector_without_duplicate_cards(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+
+        self.assertTrue(hasattr(panel, "usb_hint"))
+        self.assertTrue(hasattr(panel, "network_hint"))
+        self.assertEqual(panel.usb_hint.maximumHeight(), 16777215)
+        self.assertEqual(panel.network_hint.maximumHeight(), 16777215)
+        self.assertFalse(hasattr(panel, "method_cards"))
+        self.assertEqual(panel.layout().indexOf(panel.mode_tabs), panel.layout().indexOf(panel.method_title) + 1)
+        self.assertEqual(panel.findChildren(QFrame, "methodCard"), [])
+        self.assertTrue(any("background: #f8fafc" in label.styleSheet() for label in panel.device_summary_labels.values()))
+        self.assertFalse(any("background: #edf4ff" in label.styleSheet() for label in panel.device_summary_labels.values()))
+
+    def test_connection_method_tabs_stay_compact(self):
+        from app.gui.connection_panel import ConnectionPanel
+
+        panel = ConnectionPanel()
+
+        self.assertGreaterEqual(panel.mode_tabs.minimumHeight(), 145)
+        self.assertLessEqual(panel.mode_tabs.maximumHeight(), 160)
+        panel.mode_tabs.setCurrentIndex(1)
+        self.assertLessEqual(panel.mode_tabs.maximumHeight(), 200)
+        panel.mode_tabs.setCurrentIndex(2)
+        self.assertLessEqual(panel.mode_tabs.maximumHeight(), 175)
+        self.assertGreaterEqual(panel.device_table.minimumHeight(), 190)
 
     def test_fast_device_records_do_not_query_every_device_property(self):
         class FakeAdb:
@@ -1245,22 +1378,154 @@ class CoreBehaviorTests(unittest.TestCase):
 
             self.assertEqual(len(records), 2)
             self.assertEqual(records[0].model, "AIoT3568")
-            self.assertEqual(records[1].connection, "同一网络连接")
+            self.assertEqual(records[1].connection, "网络 ADB 连接")
         finally:
             window.close()
 
     def test_diagnosis_page_exposes_compact_current_device_summary_and_quick_actions(self):
         window = main_window_module.MainWindow()
         try:
-            self.assertEqual(window.current_device_name.text(), "未选择设备")
+            self.assertEqual(window.current_device_name.text(), "当前未选择操作设备")
             self.assertIn("先连接或扫描设备", window.current_device_detail.text())
             self.assertEqual(len(window.device_status_cards), 4)
-            self.assertEqual(window.quick_mirror_button.text(), "投屏")
+            self.assertEqual(window.quick_mirror_button.text(), "ADB 投屏")
+            self.assertIn("#147a45", window.quick_mirror_button.styleSheet())
             self.assertEqual(window.quick_log_button.text(), "日志")
+            self.assertFalse(hasattr(window.screenshot_panel, "mirror_button"))
+            self.assertFalse(window.screenshot_panel.view_screenshot_button.isEnabled())
             self.assertFalse(window.engineer_detail_frame.isVisible())
             self.assertEqual(window.detail_toggle_button.text(), "显示工程师详情")
-            self.assertLess(window.layout_priority["current_device"], window.layout_priority["connection_center"])
-            self.assertLess(window.layout_priority["connection_center"], window.layout_priority["support_tools"])
+            self.assertNotIn("connection_center", window.layout_priority)
+            self.assertLess(window.layout_priority["current_device"], window.layout_priority["support_tools"])
+        finally:
+            window.close()
+
+    def test_main_tabs_have_clear_selected_navigation_style(self):
+        window = main_window_module.MainWindow()
+        try:
+            tabs = window.centralWidget()
+            stylesheet = tabs.styleSheet()
+
+            self.assertEqual(tabs.objectName(), "mainTabs")
+            self.assertIn("QTabBar::tab:selected", stylesheet)
+            self.assertIn("border-bottom: 3px solid #2563eb", stylesheet)
+            self.assertGreaterEqual(tabs.tabBar().minimumHeight(), 48)
+            self.assertGreaterEqual(tabs.tabBar().iconSize().width(), 18)
+            self.assertTrue(all(not tabs.tabIcon(index).isNull() for index in range(tabs.count())))
+            self.assertEqual(
+                [tabs.tabBar().tabData(index) for index in range(tabs.count())],
+                ["device", "diagnosis", "log", "apk", "info"],
+            )
+            self.assertFalse(window.windowIcon().isNull())
+        finally:
+            window.close()
+
+    def test_diagnosis_page_uses_numbered_workflow_sections(self):
+        window = main_window_module.MainWindow()
+        try:
+            self.assertEqual(window.current_device_section_title.property("plainText"), "1 当前操作设备")
+            self.assertEqual(window.quick_actions_section_title.property("plainText"), "2 常用操作")
+            self.assertEqual(window.support_tools_section_title.property("plainText"), "3 辅助工具")
+            self.assertEqual(window.runtime_log_section_title.property("plainText"), "4 运行提示 / 工具日志")
+            self.assertEqual(window.current_device_section_title.objectName(), "stepHeader")
+            self.assertFalse(hasattr(window, "app_title"))
+        finally:
+            window.close()
+
+    def test_reference_style_buttons_expose_icons(self):
+        window = main_window_module.MainWindow()
+        try:
+            buttons = [
+                window.detail_toggle_button,
+                window.quick_log_button,
+                window.quick_mirror_button,
+                window.diagnose_button,
+                window.adb_debug_button,
+            ]
+            self.assertTrue(all(not button.icon().isNull() for button in buttons))
+            self.assertEqual(window.detail_toggle_button.property("appIcon"), "list")
+            self.assertEqual(window.quick_log_button.property("appIcon"), "log")
+            self.assertEqual(window.quick_mirror_button.property("appIcon"), "mirror")
+            self.assertEqual(window.diagnose_button.property("appIcon"), "package")
+            self.assertEqual(window.adb_debug_button.property("appIcon"), "terminal")
+            self.assertIn("border-radius: 6px", window.quick_mirror_button.styleSheet())
+        finally:
+            window.close()
+
+    def test_primary_pages_do_not_use_default_qstyle_icons(self):
+        root = Path(__file__).resolve().parents[1]
+        checked_files = [
+            root / "app" / "gui" / "main_window.py",
+            root / "app" / "gui" / "connection_panel.py",
+            root / "app" / "gui" / "apk_install_panel.py",
+            root / "app" / "gui" / "single_log_panel.py",
+            root / "app" / "gui" / "screenshot_panel.py",
+            root / "app" / "gui" / "file_transfer_panel.py",
+        ]
+
+        for path in checked_files:
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("standardIcon(", source, path.name)
+            self.assertNotIn("QStyle", source, path.name)
+
+    def test_gui_styles_avoid_heavy_font_weights_that_render_jagged(self):
+        root = Path(__file__).resolve().parents[1]
+        gui_files = sorted((root / "app" / "gui").glob("*.py"))
+
+        for path in gui_files:
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("font-weight: 800", source, path.name)
+            self.assertNotIn("font-weight: 700", source, path.name)
+
+    def test_ui_reference_renderer_generates_five_review_images(self):
+        root = Path(__file__).resolve().parents[1]
+        script = root / "tools" / "render_ui_reference.py"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+            result = subprocess.run(
+                [sys.executable, str(script), "--output", temp_dir],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = [
+                "01_device_connection.png",
+                "02_quick_diagnosis.png",
+                "03_single_log.png",
+                "04_apk_install.png",
+                "05_feature_description.png",
+            ]
+            self.assertEqual([path.name for path in sorted(Path(temp_dir).glob("0*.png"))], expected)
+            for name in expected:
+                path = Path(temp_dir) / name
+                self.assertGreater(path.stat().st_size, 40_000, name)
+
+    def test_quick_support_panels_group_related_actions(self):
+        from app.gui.file_transfer_panel import FileTransferPanel
+        from app.gui.screenshot_panel import ScreenshotPanel
+
+        screenshot = ScreenshotPanel()
+        transfer = FileTransferPanel()
+
+        self.assertTrue(hasattr(screenshot, "capture_actions_row"))
+        self.assertTrue(hasattr(screenshot, "recording_actions_row"))
+        self.assertTrue(hasattr(transfer, "transfer_actions_row"))
+
+    def test_device_connection_is_first_top_level_page(self):
+        window = main_window_module.MainWindow()
+        try:
+            tabs = window.centralWidget()
+
+            self.assertEqual(tabs.tabText(0), "设备连接")
+            self.assertEqual(tabs.tabText(1), "快速诊断")
+            self.assertEqual(window.connection_panel.title(), "设备连接中心")
+            self.assertNotIn("connection_center", window.layout_priority)
+            self.assertLess(window.layout_priority["current_device"], window.layout_priority["support_tools"])
         finally:
             window.close()
 
@@ -1306,7 +1571,7 @@ class CoreBehaviorTests(unittest.TestCase):
             window.on_device_detection_done(window._detect_device_snapshot())
             window._apply_device_properties(window._read_device_properties(window.adb, "USB123"))
 
-            self.assertEqual(window.current_device_name.text(), "AIoT3568")
+            self.assertEqual(window.current_device_name.text(), "当前操作设备：AIoT3568")
             self.assertIn("USB123", window.current_device_detail.text())
             self.assertIn("Android 11", window.current_device_detail.text())
             self.assertIn("已可调试", window.current_device_state.text())
@@ -1320,15 +1585,71 @@ class CoreBehaviorTests(unittest.TestCase):
         try:
             window._set_busy(True)
 
+            self.assertFalse(window.connection_panel.status_button.isEnabled())
+            self.assertFalse(window.connection_panel.usb_refresh_button.isEnabled())
+            self.assertFalse(window.connection_panel.restart_adb_button.isEnabled())
             self.assertFalse(window.connection_panel.connect_button.isEnabled())
-            self.assertFalse(window.connection_panel.tcpip_button.isEnabled())
             self.assertFalse(window.connection_panel.quick_scan_button.isEnabled())
             self.assertFalse(window.connection_panel.scan_range_button.isEnabled())
+            self.assertFalse(window.adb_debug_button.isEnabled())
             self.assertFalse(window.apk_install_panel.choose_button.isEnabled())
             self.assertFalse(window.apk_install_panel.open_button.isEnabled())
             self.assertFalse(window.apk_install_panel.start_batch_button.isEnabled())
         finally:
             window.close()
+
+    def test_open_latest_screenshot_uses_default_file_viewer_for_current_image(self):
+        captured = {}
+        old_open = main_window_module.open_file_default
+        main_window_module.open_file_default = lambda path: captured.update({"path": path})
+        window = main_window_module.MainWindow()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                image = Path(temp_dir) / "shot.png"
+                image.write_bytes(PNG_SIGNATURE + b"fake-IEND")
+                window.screenshot_panel.set_screenshot_path(image)
+
+                window.open_latest_screenshot()
+
+                self.assertEqual(captured["path"], image)
+        finally:
+            window.close()
+            main_window_module.open_file_default = old_open
+
+    def test_adb_debug_window_binds_to_selected_debuggable_device(self):
+        captured = {}
+
+        class FakeDebugWindow:
+            def __init__(self, adb, root, device_label=""):
+                captured["serial"] = adb.serial
+                captured["root"] = root
+                captured["device_label"] = device_label
+
+            def show(self):
+                captured["shown"] = True
+
+            def raise_(self):
+                captured["raised"] = True
+
+            def close(self):
+                captured["closed"] = True
+
+        old_window = main_window_module.AdbDebugWindow
+        main_window_module.AdbDebugWindow = FakeDebugWindow
+        window = main_window_module.MainWindow()
+        try:
+            record = DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="AloT3576-E", brand="rockchip", android="14", message="", raw="")
+            window.connection_panel.set_devices([record])
+
+            window.open_adb_debug_window()
+
+            self.assertEqual(captured["serial"], "USB123")
+            self.assertIn("AloT3576-E", captured["device_label"])
+            self.assertTrue(captured["shown"])
+            self.assertTrue(captured["raised"])
+        finally:
+            window.close()
+            main_window_module.AdbDebugWindow = old_window
 
     def test_restart_adb_uses_background_worker_instead_of_blocking_ui_thread(self):
         captured = {}
@@ -1494,19 +1815,28 @@ class CoreBehaviorTests(unittest.TestCase):
             main_window_module.show_info = old_info
             main_window_module.show_warning = old_warning
 
-    def test_enable_network_debugging_uses_editable_default_5566_port(self):
+    def test_network_debugging_tcpip_entry_is_no_longer_exposed(self):
         window = main_window_module.MainWindow()
         captured = {}
+        old_info = main_window_module.show_info
+        old_warning = main_window_module.show_warning
+        main_window_module.show_info = lambda *args, **kwargs: None
+        main_window_module.show_warning = lambda *args, **kwargs: None
         try:
-            window.connection_panel.port.setText("5566")
+            record = DeviceRecord(serial="USB123", status="已可调试", connection="数据线连接", endpoint="", model="Demo", brand="", android="14", message="", raw="")
+            window.connection_panel.set_devices([record])
             window.run_simple_adb = lambda args, title: captured.update({"args": args, "title": title})
 
-            window.connection_panel.tcpip_button.click()
+            window.enable_network_debugging()
 
-            self.assertEqual(captured["args"], ["tcpip", "5566"])
-            self.assertIn("同一网络调试", captured["title"])
+            self.assertFalse(hasattr(window.connection_panel, "tcpip_button"))
+            self.assertFalse(hasattr(window.connection_panel, "port"))
+            self.assertEqual(captured, {})
+            self.assertIn("网络调试端口入口", window.run_status.text())
         finally:
             window.close()
+            main_window_module.show_info = old_info
+            main_window_module.show_warning = old_warning
 
     def test_packaging_configuration_documents_onefile_exe_and_version_resource(self):
         root = Path(__file__).resolve().parents[1]
@@ -1516,7 +1846,7 @@ class CoreBehaviorTests(unittest.TestCase):
 
         self.assertIn(r"dist\Android_ADB_Diagnostic_Tool.exe", readme)
         self.assertIn(
-            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.1.2/Android_ADB_Diagnostic_Tool_v1.1.2.exe",
+            "https://github.com/LayMannuo/Android_ADB_Diagnostic_Tool/releases/download/v1.2.1/Android_ADB_Diagnostic_Tool_v1.2.1.exe",
             readme,
         )
         self.assertNotIn("Android_ADB_Diagnostic_Tool/dist/Android_ADB_Diagnostic_Tool.exe", readme)
@@ -1531,12 +1861,33 @@ class CoreBehaviorTests(unittest.TestCase):
 
         window = main_window_module.MainWindow()
         try:
-            self.assertEqual(APP_VERSION, "1.1.2")
+            self.assertEqual(APP_VERSION, "1.2.1")
             self.assertIn(f"v{APP_VERSION}", APP_WINDOW_TITLE)
             self.assertEqual(window.windowTitle(), APP_WINDOW_TITLE)
-            self.assertIn(f"v{APP_VERSION}", window.app_title.text())
+            self.assertFalse(hasattr(window, "app_title"))
         finally:
             window.close()
+
+    def test_legacy_network_debugging_method_does_not_run_adb(self):
+        window = main_window_module.MainWindow()
+        captured = {}
+        old_info = main_window_module.show_info
+        old_warning = main_window_module.show_warning
+        main_window_module.show_info = lambda *args, **kwargs: None
+        main_window_module.show_warning = lambda *args, **kwargs: None
+        try:
+            record = DeviceRecord(serial="192.168.1.20:5566", status="已可调试", connection="网络 ADB 连接", endpoint="192.168.1.20:5566", model="Demo", brand="", android="14", message="", raw="")
+            window.connection_panel.set_devices([record])
+            window.run_simple_adb = lambda args, title: captured.update({"args": args, "title": title})
+
+            window.enable_network_debugging()
+
+            self.assertEqual(captured, {})
+            self.assertIn("网络调试端口入口", window.run_status.text())
+        finally:
+            window.close()
+            main_window_module.show_info = old_info
+            main_window_module.show_warning = old_warning
 
     def test_google_pages_verification_files_are_present(self):
         root = Path(__file__).resolve().parents[1]
@@ -1550,7 +1901,7 @@ class CoreBehaviorTests(unittest.TestCase):
         )
         landing_text = landing.read_text(encoding="utf-8")
         self.assertIn("Android 通用 ADB 诊断助手", landing_text)
-        self.assertIn("Android_ADB_Diagnostic_Tool_v1.1.2.exe", landing_text)
+        self.assertIn("Android_ADB_Diagnostic_Tool_v1.2.1.exe", landing_text)
         self.assertIn("googlefa92bf9bd382d8db.html", sitemap.read_text(encoding="utf-8"))
 
 

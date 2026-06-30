@@ -60,12 +60,13 @@ class LiveLogWorker(QThread):
 
 
 class LiveLogWindow(QWidget):
-    def __init__(self, adb: AdbManager, output_root: Path):
+    def __init__(self, adb: AdbManager, output_root: Path, device_label: str = ""):
         super().__init__()
         self.adb = adb
         self.output_root = output_root
+        self.device_label = device_label
         self.worker: LiveLogWorker | None = None
-        self.setWindowTitle("实时日志")
+        self.setWindowTitle(f"实时日志 - {device_label}" if device_label else "实时日志")
         self.resize(760, 460)
         self.setMinimumSize(420, 300)
         layout = QVBoxLayout(self)
@@ -74,10 +75,10 @@ class LiveLogWindow(QWidget):
         self.stop_button = QPushButton("停止持续抓取")
         self.clear_button = QPushButton("清空显示")
         self.save_button = QPushButton("选择保存目录")
-        style_button(self.start_button, "success", "先保存设备已缓存 logcat，再持续追加新日志。")
-        style_button(self.stop_button, "warning", "停止持续日志抓取。")
-        style_button(self.clear_button, "secondary", "清空窗口显示，不删除保存文件。")
-        style_button(self.save_button, "secondary", "选择实时日志保存目录。")
+        style_button(self.start_button, "success", "先保存设备已缓存 logcat，再持续追加新日志。", "record")
+        style_button(self.stop_button, "warning", "停止持续日志抓取。", "stop")
+        style_button(self.clear_button, "secondary", "清空窗口显示，不删除保存文件。", "clear")
+        style_button(self.save_button, "secondary", "选择实时日志保存目录。", "folder")
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
         buttons.addWidget(self.clear_button)
@@ -103,6 +104,8 @@ class LiveLogWindow(QWidget):
         self.worker = LiveLogWorker(self.adb, self.save_dir / "live_logcat.txt")
         self.worker.line.connect(self.text.append)
         self.worker.status.connect(self.text.append)
+        if self.device_label:
+            self.text.append(f"目标设备：{self.device_label}")
         self.worker.start()
 
     def stop(self):

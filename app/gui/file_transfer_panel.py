@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QVBoxLayout
 
 from app.gui.styles import (
     CARD_TITLE_STYLE,
@@ -44,12 +44,15 @@ class FileTransferPanel(QFrame):
         layout.addLayout(form)
         self.push_button = QPushButton("推送文件到设备")
         self.pull_button = QPushButton("从设备拉取文件")
-        style_button(browse_file, "secondary", "选择要推送到设备的本地文件。")
-        style_button(browse_dir, "secondary", "选择从设备拉取文件后的本地保存目录。")
-        style_button(self.push_button, "primary", "执行 adb push，把本地文件发送到设备。")
-        style_button(self.pull_button, "primary", "执行 adb pull，把设备文件拉取到本地。")
-        layout.addWidget(self.push_button)
-        layout.addWidget(self.pull_button)
+        style_button(browse_file, "secondary", "选择要推送到设备的本地文件。", "file")
+        style_button(browse_dir, "secondary", "选择从设备拉取文件后的本地保存目录。", "folder")
+        style_button(self.push_button, "primary", "执行 adb push，把本地文件发送到设备。", "upload")
+        style_button(self.pull_button, "primary", "执行 adb pull，把设备文件拉取到本地。", "download")
+        self.transfer_actions_row = QHBoxLayout()
+        self.transfer_actions_row.addWidget(self.push_button)
+        self.transfer_actions_row.addWidget(self.pull_button)
+        self.transfer_actions_row.addStretch(1)
+        layout.addLayout(self.transfer_actions_row)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -58,10 +61,10 @@ class FileTransferPanel(QFrame):
         self.status.setStyleSheet(RESULT_IDLE_STYLE)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
-        note = QTextEdit("普通客户建议使用 /sdcard/Download/。/system、/vendor、/product、/data 通常需要 adb root + adb remount；失败可能是设备权限限制。")
-        note.setReadOnly(True)
-        note.setMaximumHeight(80)
-        layout.addWidget(note)
+        self.note = QLabel("普通客户建议使用 /sdcard/Download/。/system、/vendor、/product、/data 通常需要 adb root + adb remount；失败可能是设备权限限制。")
+        self.note.setWordWrap(True)
+        self.note.setStyleSheet(RESULT_IDLE_STYLE)
+        layout.addWidget(self.note)
         browse_file.clicked.connect(self.choose_file)
         browse_dir.clicked.connect(self.choose_dir)
 

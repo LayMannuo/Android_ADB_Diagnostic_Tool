@@ -30,8 +30,11 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     from app.gui.main_window import MainWindow
+    from app.gui.styles import app_icon, configure_application_font
 
     app = QApplication(sys.argv)
+    configure_application_font(app)
+    app.setWindowIcon(app_icon("adb", "#2563eb"))
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     window = MainWindow()
